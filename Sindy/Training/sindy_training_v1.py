@@ -22,6 +22,7 @@ from tqdm import tqdm
 import time
 import scipy.stats as stats
 import statsmodels.api as sm
+from pysindy.optimizers import SR3, FROLS, SSR
 
 
 # Functions to add to your existing script
@@ -68,7 +69,11 @@ def load_and_prepare_data(file_path):
 
 
 def create_sindy_model(
-    threshold=0.001, alpha=0.1, poly_order=1, library_type="polynomial"
+    threshold=0.001,
+    alpha=0.1,
+    poly_order=1,
+    library_type="polynomial",
+    optimizer_type="STLSQ",
 ):
     """
     Create a SINDy model using PySINDy's built-in libraries
@@ -89,9 +94,29 @@ def create_sindy_model(
     SINDy model
     """
     print("CREATING SINDY MODEL")
+    # Define the optimizer based on the optimizer_type
+    if optimizer_type == "STLSQ":
+        # Sequentially thresholded least squares
+        optimizer = STLSQ(threshold=threshold, alpha=alpha)
 
-    # Define the optimizer
-    optimizer = STLSQ(threshold=threshold, alpha=alpha)
+    elif optimizer_type == "SR3":
+        # Sparse relaxed regularized regression
+
+        optimizer = SR3(thresholder="l1", nu=1, tol=1e-6, max_iter=10000)
+
+    elif optimizer_type == "SSR":
+        # Stepwise Sparse Least Squares Estimator
+
+        optimizer = SSR(normalize_columns=True, kappa=alpha)
+
+    elif optimizer_type == "FROLS":
+        # SINDy with physics-informed constraints
+        optimizer = FROLS(normalize_columns=True, kappa=alpha)
+
+    else:
+        # Default to STLSQ if an invalid optimizer is specified
+        print(f"Warning: Unknown optimizer type '{optimizer_type}'. Using STLSQ.")
+        optimizer = STLSQ(threshold=threshold, alpha=alpha)
 
     # Define differentiation method
     der = SmoothedFiniteDifference()
@@ -126,8 +151,6 @@ def create_sindy_model(
         )
 
         lib = PolynomialLibrary(degree=poly_order)
-
-    print(lib)
 
     # Create SINDy model
     model = SINDy(
@@ -185,9 +208,9 @@ def interpret_sindy_equations_improved(model, variable_names, input_names=None):
     """
     # Get the coefficients from the model
     coefficients = model.coefficients()
-    print("model details")
+
     model.print()
-    print("Job done")
+
     # These are the known library terms based on how we defined our model
     # For our simple model with 2 variables (x0, x1) and 5 inputs (u0-u4)
     # The expected features are in this order:
@@ -542,6 +565,9 @@ def tune_hyperparameters(X, u, param_grid, dt=1):
             poly_order=params["poly_order"],
             library_type=(
                 params["library_type"] if "library_type" in params else "polynomial"
+            ),
+            optimizer_type=(
+                params["optimizer_type"] if "optimizer_type" in params else "STLSQ"
             ),
         )
 
@@ -927,7 +953,7 @@ def plot_hyperparameter_results(tuning_results, results_dir=None):
         print("Complexity data not available for plotting")
 
 
-def calculate_mse(actual, predicted, variable_idx=1):
+def calculate_rmse(actual, predicted, variable_idx=1):
     """
     Calculate Mean Squared Error for a specific variable
 
@@ -1370,8 +1396,15 @@ def main():
         "--library_type",
         type=str,
         default="polynomial",
-        choices=["polynomial", "fourier", "mixed", "rational"],
+        choices=["polynomial", "fourier", "identity"],
         help="Type of feature library to use",
+    )
+    parser.add_argument(
+        "--optimizer_type",
+        type=str,
+        default="STLSQ",
+        choices=["STLSQ", "SR3", "FROLS", "SSLE", "SINDyPI"],
+        help="Type of optimizer to use for SINDy",
     )
     parser.add_argument(
         "--dt", type=float, default=1, help="Time step for multi-step prediction"
@@ -1406,9 +1439,10 @@ def main():
         # Define parameter grid
         param_grid = {
             "threshold": [0.00001, 0.0001, 0.001, 0.01, 0.1],
-            "alpha": [0.001, 0.01, 0.1, 1.0],
+            "alpha": [0.001, 0.001, 0.01, 0.1, 1.0],
             "poly_order": [1, 2, 3],  # Linear and quadratic terms
-            "library_type": ["polynomial", "fourier", "mixed", "rational"],
+            "library_type": ["polynomial", "fourier", "identity"],
+            "optimizer_type": ["STLSQ", "SR3", "SSR", "FROLS"],
         }
 
         # Perform hyperparameter tuning
@@ -1554,9 +1588,9 @@ def main():
 
         # Calculate and print MSE for each selected floor
         for idx in floor_indices:
-            single_mse = calculate_mse(X_test_original, X_pred_single, idx)
+            single_mse = calculate_rmse(X_test_original, X_pred_single, idx)
             print(
-                f"\nSingle-step prediction MSE for {variable_names[idx]}: {single_mse:.4f}"
+                f"\nSingle-step prediction RMSE for {variable_names[idx]}: {single_mse:.4f}"
             )
     else:
         # If we're only doing multi-step, we still need a placeholder for the plot function
@@ -1572,11 +1606,11 @@ def main():
 
         # Calculate and print MSE for each selected floor
         for idx in floor_indices:
-            multi_mse = calculate_mse(
+            multi_mse = calculate_rmse(
                 X_test_original[: len(X_pred_multi)], X_pred_multi, idx
             )
             print(
-                f"Multi-step prediction MSE for {variable_names[idx]}: {multi_mse:.4f}"
+                f"Multi-step prediction RMSE for {variable_names[idx]}: {multi_mse:.4f}"
             )
     else:
         X_pred_multi = None
@@ -1629,13 +1663,14 @@ def main():
     print("\nModel Performance (RMSE):")
     for idx in floor_indices:
         if args.prediction_mode in ["single", "both"]:
-            single_rmse = np.sqrt(calculate_mse(X_test_original, X_pred_single, idx))
+            single_rmse = calculate_rmse(X_test_original, X_pred_single, idx)
             print(f"Single-step {variable_names[idx]} RMSE: {single_rmse:.4f}°C")
 
         if args.prediction_mode in ["multi", "both"]:
-            multi_rmse = np.sqrt(
-                calculate_mse(X_test_original[: len(X_pred_multi)], X_pred_multi, idx)
+            multi_rmse = calculate_rmse(
+                X_test_original[: len(X_pred_multi)], X_pred_multi, idx
             )
+
             print(f"Multi-step {variable_names[idx]} RMSE: {multi_rmse:.4f}°C")
 
     # Plot results for each selected floor
