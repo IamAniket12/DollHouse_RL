@@ -5,29 +5,25 @@ import os
 import time
 from datetime import datetime
 import argparse
+import json
 
-# Import the SINDy training function
+# Import our modules
 from train_sindy_model import train_sindy_model
 from dollhouse_env import DollhouseThermalEnv
-from normalized_observation_wrapper import NormalizedObservationWrapper
 
 
-def create_rule_based_controller(hysteresis=0.5, controller_type="simple"):
+def create_rule_based_controller(hysteresis=0.5):
     """
-    Create a rule-based controller with different strategies.
+    Create a simple rule-based controller.
 
     Args:
         hysteresis: Temperature buffer to prevent oscillation
-        controller_type: Type of controller strategy:
-                         - "simple": Basic independent control for each floor
-                         - "coordinated": Only opens windows when both floors need cooling
-                         - "conservative": Prioritizes heating over cooling
 
     Returns:
         function: Rule-based controller function
     """
 
-    def simple_controller(observation):
+    def controller(observation):
         # Extract state variables
         ground_temp = observation[0]
         top_temp = observation[1]
@@ -60,126 +56,27 @@ def create_rule_based_controller(hysteresis=0.5, controller_type="simple"):
             # Too hot - turn off light, open window
             action[2] = 0  # Turn OFF top light
             action[3] = 1  # Open top window
-        print(f"Action taken: {action}")
-        return action
-
-    def coordinated_controller(observation):
-        # Extract state variables
-        ground_temp = observation[0]
-        top_temp = observation[1]
-        external_temp = observation[2]
-        heating_setpoint = observation[7]
-        cooling_setpoint = observation[8]
-
-        # Initialize action
-        action = np.zeros(4, dtype=int)
-
-        # Average setpoint for decision boundary
-        avg_setpoint = (heating_setpoint + cooling_setpoint) / 2
-
-        # Ground floor heating control
-        if ground_temp < avg_setpoint - hysteresis:
-            # Too cold - turn on light for heat
-            action[0] = 1  # Turn ON ground light
-        else:
-            # Not cold - turn off light
-            action[0] = 0  # Turn OFF ground light
-
-        # Top floor heating control
-        if top_temp < avg_setpoint - hysteresis:
-            # Too cold - turn on light for heat
-            action[2] = 1  # Turn ON top light
-        else:
-            # Not cold - turn off light
-            action[2] = 0  # Turn OFF top light
-
-        # Coordinated window control - only open windows if BOTH floors are above setpoint
-        both_floors_warm = (
-            ground_temp > avg_setpoint + hysteresis
-            and top_temp > avg_setpoint + hysteresis
-        )
-
-        if both_floors_warm:
-            # Both floors are too warm - open both windows
-            action[1] = 1  # Open ground window
-            action[3] = 1  # Open top window
-        else:
-            # At least one floor needs heating - close both windows
-            action[1] = 0  # Close ground window
-            action[3] = 0  # Close top window
-        print(f"Action taken: {action}")
-        return action
-
-    def conservative_controller(observation):
-        # Extract state variables
-        ground_temp = observation[0]
-        top_temp = observation[1]
-        external_temp = observation[2]
-        heating_setpoint = observation[7]
-        cooling_setpoint = observation[8]
-
-        # Initialize action
-        action = np.zeros(4, dtype=int)
-
-        # Ground floor control - prioritize heating over cooling
-        if ground_temp < heating_setpoint - hysteresis:
-            # Too cold - turn on light for heat, close window
-            action[0] = 1  # Turn ON ground light
-            action[1] = 0  # Close ground window
-        elif ground_temp > cooling_setpoint + hysteresis:
-            # Too hot - turn off light, open window
-            action[0] = 0  # Turn OFF ground light
-            action[1] = 1  # Open ground window
-        else:
-            # Within comfort band - use minimal energy
-            action[0] = 0  # Turn OFF ground light
-            action[1] = 0  # Close ground window
-
-        # Top floor control - prioritize heating over cooling
-        if top_temp < heating_setpoint - hysteresis:
-            # Too cold - turn on light for heat, close window
-            action[2] = 1  # Turn ON top light
-            action[3] = 0  # Close top window
-        elif top_temp > cooling_setpoint + hysteresis:
-            # Too hot - turn off light, open window
-            action[2] = 0  # Turn OFF top light
-            action[3] = 1  # Open top window
-        else:
-            # Within comfort band - use minimal energy
-            action[2] = 0  # Turn OFF top light
-            action[3] = 0  # Close top window
 
         return action
 
-    # Select the appropriate controller based on type
-    if controller_type == "coordinated":
-        return coordinated_controller
-    elif controller_type == "conservative":
-        return conservative_controller
-    else:  # default to simple
-        return simple_controller
+    return controller
 
 
-def evaluate_rule_based(
-    env, num_episodes=5, render=True, hysteresis=0.5, controller_type="simple"
-):
+def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
     """
-    Evaluate a rule-based controller on the environment.
+    Evaluate a simple rule-based controller on the environment.
 
     Args:
         env: The environment to evaluate on
         num_episodes: Number of episodes to evaluate
         render: Whether to render the environment
         hysteresis: Hysteresis parameter for the rule-based controller
-        controller_type: Type of controller to use ("simple", "coordinated", or "conservative")
 
     Returns:
         dict: Evaluation results
     """
     # Create the rule-based controller
-    controller = create_rule_based_controller(
-        hysteresis=hysteresis, controller_type=controller_type
-    )
+    controller = create_rule_based_controller(hysteresis=hysteresis)
 
     # Get the original environment if wrapped
     if hasattr(env, "unwrapped"):
@@ -199,6 +96,12 @@ def evaluate_rule_based(
         "top_window_open": 0,
     }
 
+    # Store episode data for visualization and analysis
+    episode_temperatures = []
+    episode_external_temps = []
+    episode_actions = []
+    episode_rewards = []
+
     for episode in range(num_episodes):
         obs = env.reset()
         done = False
@@ -207,6 +110,12 @@ def evaluate_rule_based(
 
         # For tracking performance
         comfort_violations = 0
+
+        # For this episode
+        temps = []
+        ext_temps = []
+        actions = []
+        rewards = []
 
         while not done:
             # If the environment is normalized, get the original observation
@@ -227,6 +136,12 @@ def evaluate_rule_based(
             episode_reward += reward
             steps += 1
 
+            # Record data for analysis
+            temps.append([obs[0], obs[1]])  # ground_temp, top_temp
+            ext_temps.append(obs[2])  # external_temp
+            actions.append(action)
+            rewards.append(reward)
+
             # Check for comfort violations
             if (
                 "ground_comfort_violation" in info
@@ -238,6 +153,12 @@ def evaluate_rule_based(
 
             if render:
                 orig_env.render()
+
+        # Store episode data
+        episode_temperatures.append(temps)
+        episode_external_temps.append(ext_temps)
+        episode_actions.append(actions)
+        episode_rewards.append(rewards)
 
         avg_actions = {k: v / steps for k, v in actions_taken.items()}
 
@@ -258,29 +179,84 @@ def evaluate_rule_based(
     if hasattr(orig_env, "get_performance_summary"):
         performance = orig_env.get_performance_summary()
 
-        print(
-            f"\n{controller_type.capitalize()} Rule-Based Controller Evaluation Summary:"
-        )
+        print(f"\nSimple Rule-Based Controller Evaluation Summary:")
         print(f"Average Total Reward: {performance['avg_total_reward']:.2f}")
         print(f"Ground Floor Comfort %: {performance['avg_ground_comfort_pct']:.2f}%")
         print(f"Top Floor Comfort %: {performance['avg_top_comfort_pct']:.2f}%")
         print(f"Average Light Hours: {performance['avg_light_hours']:.2f}")
 
+        # Add episode data to performance dict
+        performance["episode_data"] = {
+            "temperatures": episode_temperatures,
+            "external_temps": episode_external_temps,
+            "actions": episode_actions,
+            "rewards": episode_rewards,
+            "total_rewards": total_rewards,
+        }
+
+        # Add environment parameters
+        performance["heating_setpoint"] = orig_env.heating_setpoint
+        performance["cooling_setpoint"] = orig_env.cooling_setpoint
+        performance["reward_type"] = orig_env.reward_type
+        performance["energy_weight"] = orig_env.energy_weight
+        performance["comfort_weight"] = orig_env.comfort_weight
+
         # Save results
-        if hasattr(orig_env, "save_results"):
-            output_dir = "rule_based_results"
-            os.makedirs(output_dir, exist_ok=True)
+        output_dir = "rule_based_results"
+        os.makedirs(output_dir, exist_ok=True)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filepath = os.path.join(
-                output_dir, f"{controller_type}_controller_results_{timestamp}.json"
-            )
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filepath = os.path.join(
+            output_dir, f"simple_controller_results_{timestamp}.json"
+        )
 
-            orig_env.save_results(
-                filepath,
-                controller_name=f"{controller_type.capitalize()} Rule-Based Controller",
-            )
-            print(f"Results saved to {filepath}")
+        orig_env.save_results(
+            filepath,
+            controller_name="Simple Rule-Based Controller",
+        )
+        print(f"Results saved to {filepath}")
+
+        # Save performance data with episode details
+        results_path = os.path.join(
+            output_dir, f"simple_detailed_results_{timestamp}.json"
+        )
+        with open(results_path, "w") as f:
+            # Convert numpy arrays to lists for JSON serialization
+            serializable_perf = {}
+            for key, value in performance.items():
+                if key == "episode_data":
+                    serializable_perf[key] = {
+                        "temperatures": [
+                            [[float(t) for t in temp] for temp in episode]
+                            for episode in value["temperatures"]
+                        ],
+                        "external_temps": [
+                            [float(t) for t in temps]
+                            for temps in value["external_temps"]
+                        ],
+                        "actions": [
+                            [[int(a) for a in action] for action in episode]
+                            for episode in value["actions"]
+                        ],
+                        "rewards": [
+                            [float(r) for r in rewards] for rewards in value["rewards"]
+                        ],
+                        "total_rewards": [float(r) for r in value["total_rewards"]],
+                    }
+                elif isinstance(value, np.ndarray):
+                    serializable_perf[key] = value.tolist()
+                elif isinstance(value, (np.integer, np.floating)):
+                    serializable_perf[key] = (
+                        float(value) if isinstance(value, np.floating) else int(value)
+                    )
+                else:
+                    serializable_perf[key] = value
+
+            json.dump(serializable_perf, f, indent=4)
+        print(f"Detailed results saved to {results_path}")
+
+        # Create visualizations
+        visualize_performance(performance, output_dir, "Simple Rule-Based Controller")
     else:
         # Simple performance metrics if the environment doesn't provide detailed ones
         performance = {
@@ -294,18 +270,206 @@ def evaluate_rule_based(
     return performance
 
 
-def run_rule_based_evaluation(
-    data_file, output_dir=None, num_episodes=5, render=True, controller_type="simple"
+def visualize_performance(
+    performance, output_dir, controller_name="Simple Rule-Based Controller"
 ):
     """
-    Train a SINDy model and evaluate a rule-based controller.
+    Create visualizations of controller performance.
+
+    Args:
+        performance: Performance dictionary from evaluate_controller
+        output_dir: Directory to save visualizations
+        controller_name: Name of the controller for plot titles
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Extract environment parameters
+    heating_setpoint = performance.get("heating_setpoint", 20.0)
+    cooling_setpoint = performance.get("cooling_setpoint", 24.0)
+
+    # Extract episode data
+    episode_temperatures = performance["episode_data"]["temperatures"]
+    episode_external_temps = performance["episode_data"]["external_temps"]
+    episode_actions = performance["episode_data"]["actions"]
+    episode_rewards = performance["episode_data"]["rewards"]
+
+    # Plot temperatures, actions, and rewards for the first episode
+    plt.figure(figsize=(15, 12))
+
+    # Temperature plot
+    plt.subplot(4, 1, 1)
+    ground_temps = [temp[0] for temp in episode_temperatures[0]]
+    top_temps = [temp[1] for temp in episode_temperatures[0]]
+    plt.plot(ground_temps, label="Ground Floor Temperature")
+    plt.plot(top_temps, label="Top Floor Temperature")
+    plt.axhline(
+        y=heating_setpoint,
+        color="r",
+        linestyle="--",
+        label=f"Heating Setpoint ({heating_setpoint}°C)",
+    )
+    plt.axhline(
+        y=cooling_setpoint,
+        color="b",
+        linestyle="--",
+        label=f"Cooling Setpoint ({cooling_setpoint}°C)",
+    )
+    plt.title(f"{controller_name} - Temperatures (Episode 1)")
+    plt.ylabel("Temperature (°C)")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    # External temperature plot
+    plt.subplot(4, 1, 2)
+    ext_temps = episode_external_temps[0]
+    plt.plot(ext_temps, label="External Temperature", color="purple")
+    plt.axhline(
+        y=heating_setpoint,
+        color="r",
+        linestyle="--",
+        label=f"Heating Setpoint ({heating_setpoint}°C)",
+    )
+    plt.axhline(
+        y=cooling_setpoint,
+        color="b",
+        linestyle="--",
+        label=f"Cooling Setpoint ({cooling_setpoint}°C)",
+    )
+    plt.title(f"{controller_name} - External Temperature (Episode 1)")
+    plt.ylabel("Temperature (°C)")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    # Actions plot
+    plt.subplot(4, 1, 3)
+    actions = np.array(episode_actions[0])
+    action_names = ["Ground Light", "Ground Window", "Top Light", "Top Window"]
+    for i, name in enumerate(action_names):
+        plt.plot(actions[:, i], label=name)
+    plt.title(f"{controller_name} - Actions (Episode 1)")
+    plt.ylabel("Action State (0/1)")
+    plt.ylim(-0.1, 1.1)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    # Rewards plot
+    plt.subplot(4, 1, 4)
+    plt.plot(episode_rewards[0], label="Step Reward")
+    plt.title(f"{controller_name} - Rewards (Episode 1)")
+    plt.xlabel("Timestep")
+    plt.ylabel("Reward")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f"simple_controller_episode_analysis.png"))
+
+    # Summary metrics plot
+    plt.figure(figsize=(12, 8))
+    metrics = [
+        ("avg_total_reward", "Total Reward"),
+        ("avg_ground_comfort_pct", "Ground Floor Comfort %"),
+        ("avg_top_comfort_pct", "Top Floor Comfort %"),
+        ("avg_light_hours", "Light Hours"),
+    ]
+
+    for i, (metric, label) in enumerate(metrics):
+        plt.subplot(2, 2, i + 1)
+        plt.bar([controller_name], [performance.get(metric, 0)])
+        plt.title(label)
+        plt.grid(True, alpha=0.3)
+
+        # Add value label
+        plt.text(
+            0,
+            performance.get(metric, 0) + 0.1,
+            f"{performance.get(metric, 0):.2f}",
+            ha="center",
+            va="bottom",
+        )
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f"simple_controller_summary.png"))
+
+    # Create temperature distribution plot
+    plt.figure(figsize=(14, 6))
+
+    # Combine all temperature data across episodes
+    all_ground_temps = []
+    all_top_temps = []
+
+    for episode_temps in episode_temperatures:
+        all_ground_temps.extend([temp[0] for temp in episode_temps])
+        all_top_temps.extend([temp[1] for temp in episode_temps])
+
+    # Ground floor temperature distribution
+    plt.subplot(1, 2, 1)
+    plt.hist(all_ground_temps, bins=30, alpha=0.7)
+    plt.axvline(
+        x=heating_setpoint,
+        color="r",
+        linestyle="--",
+        label=f"Heating Setpoint ({heating_setpoint}°C)",
+    )
+    plt.axvline(
+        x=cooling_setpoint,
+        color="b",
+        linestyle="--",
+        label=f"Cooling Setpoint ({cooling_setpoint}°C)",
+    )
+    plt.title(f"{controller_name} - Ground Floor Temperature Distribution")
+    plt.xlabel("Temperature (°C)")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    # Top floor temperature distribution
+    plt.subplot(1, 2, 2)
+    plt.hist(all_top_temps, bins=30, alpha=0.7)
+    plt.axvline(
+        x=heating_setpoint,
+        color="r",
+        linestyle="--",
+        label=f"Heating Setpoint ({heating_setpoint}°C)",
+    )
+    plt.axvline(
+        x=cooling_setpoint,
+        color="b",
+        linestyle="--",
+        label=f"Cooling Setpoint ({cooling_setpoint}°C)",
+    )
+    plt.title(f"{controller_name} - Top Floor Temperature Distribution")
+    plt.xlabel("Temperature (°C)")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(output_dir, f"simple_controller_temperature_distribution.png")
+    )
+
+    print(f"Visualizations saved to {output_dir}")
+
+
+def run_rule_based_evaluation(
+    data_file,
+    output_dir=None,
+    num_episodes=5,
+    render=True,
+    env_params_path=None,
+    hysteresis=0.5,
+):
+    """
+    Train a SINDy model and evaluate a simple rule-based controller.
 
     Args:
         data_file: Path to data file for training SINDy model
         output_dir: Directory to save results
         num_episodes: Number of episodes for evaluation
         render: Whether to render during evaluation
-        controller_type: Type of controller to use ("simple", "coordinated", or "conservative")
+        env_params_path: Path to the saved environment parameters
+        hysteresis: Hysteresis parameter for the controller
 
     Returns:
         dict: Evaluation results
@@ -313,56 +477,65 @@ def run_rule_based_evaluation(
     # Set output directory
     if output_dir is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = f"{controller_type}_controller_results_{timestamp}"
+        output_dir = f"simple_controller_results_{timestamp}"
 
     os.makedirs(output_dir, exist_ok=True)
     print(f"Results will be saved to {output_dir}")
 
-    # Train SINDy model
-    print(f"Training SINDy model on {data_file}...")
-    start_time = time.time()
-    sindy_model = train_sindy_model(file_path=data_file)
-    training_time = time.time() - start_time
-    print(f"SINDy model training completed in {training_time:.2f} seconds")
-
     # Create environment
-    env_params = {
-        "sindy_model": sindy_model,
-        "episode_length": 200,  # Adjust as needed
-        "time_step_seconds": 30,
-        "heating_setpoint": 22.0,
-        "cooling_setpoint": 28.0,
-        "external_temp_pattern": "sine",
-        "setpoint_pattern": "fixed",
-        "reward_type": "balanced",
-        "energy_weight": 0.5,
-        "comfort_weight": 1.0,
-    }
+    if env_params_path:
+        # Load environment parameters
+        with open(env_params_path, "r") as f:
+            env_params = json.load(f)
 
-    # Create environment
-    env = DollhouseThermalEnv(**env_params)
+        # Train SINDy model
+        print(f"Training SINDy model on {data_file}...")
+        start_time = time.time()
+        sindy_model = train_sindy_model(file_path=data_file)
+        training_time = time.time() - start_time
+        print(f"SINDy model training completed in {training_time:.2f} seconds")
 
-    # Optionally normalize observations
-    # env = NormalizedObservationWrapper(env)
+        # Replace SINDy model placeholder
+        env_params["sindy_model"] = sindy_model
+
+        # Create environment with saved parameters
+        env = DollhouseThermalEnv(**env_params)
+    else:
+        # Train SINDy model
+        print(f"Training SINDy model on {data_file}...")
+        start_time = time.time()
+        sindy_model = train_sindy_model(file_path=data_file)
+        training_time = time.time() - start_time
+        print(f"SINDy model training completed in {training_time:.2f} seconds")
+
+        # Create environment with default parameters
+        env_params = {
+            "sindy_model": sindy_model,
+            "episode_length": 1000,  # 24 hours with 30-second timesteps
+            "time_step_seconds": 30,
+            "heating_setpoint": 26.0,
+            "cooling_setpoint": 28.0,
+            "external_temp_pattern": "sine",
+            "setpoint_pattern": "fixed",
+            "reward_type": "balanced",
+            "energy_weight": 0.5,
+            "comfort_weight": 1.0,
+        }
+
+        env = DollhouseThermalEnv(**env_params)
 
     # Save environment parameters
     with open(os.path.join(output_dir, "env_params.json"), "w") as f:
         # Convert non-serializable parameters to strings
         serializable_params = env_params.copy()
         serializable_params["sindy_model"] = "SINDy model object (not serializable)"
-        import json
-
         json.dump(serializable_params, f, indent=4)
 
     # Evaluate rule-based controller
-    print(f"\nEvaluating {controller_type.capitalize()} Rule-Based Controller...")
+    print(f"\nEvaluating Simple Rule-Based Controller...")
     start_time = time.time()
     performance = evaluate_rule_based(
-        env=env,
-        num_episodes=num_episodes,
-        render=render,
-        hysteresis=0.5,
-        controller_type=controller_type,
+        env=env, num_episodes=num_episodes, render=render, hysteresis=hysteresis
     )
     evaluation_time = time.time() - start_time
     print(f"Evaluation completed in {evaluation_time:.2f} seconds")
@@ -387,7 +560,7 @@ def run_rule_based_evaluation(
         )
         plt.ylabel("Temperature (°C)")
         plt.legend()
-        plt.title(f"{controller_type.capitalize()} Rule-Based Controller Performance")
+        plt.title(f"Simple Rule-Based Controller Performance")
         plt.grid(True)
 
         # Plot actions
@@ -403,11 +576,9 @@ def run_rule_based_evaluation(
         plt.grid(True)
 
         plt.tight_layout()
-        plt.savefig(
-            os.path.join(output_dir, f"{controller_type}_controller_performance.png")
-        )
+        plt.savefig(os.path.join(output_dir, "simple_controller_performance.png"))
         print(
-            f"Performance plot saved to {os.path.join(output_dir, f'{controller_type}_controller_performance.png')}"
+            f"Performance plot saved to {os.path.join(output_dir, 'simple_controller_performance.png')}"
         )
 
     return performance
@@ -416,16 +587,14 @@ def run_rule_based_evaluation(
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Train SINDy model and evaluate rule-based controller"
+        description="Train SINDy model and evaluate simple rule-based controller"
     )
 
     # Required arguments
     parser.add_argument(
         "--data",
         type=str,
-        default=[
-            "../Data/dollhouse-data-2025-03-24.csv",
-        ],
+        default="../Data/dollhouse-data-2025-03-24.csv",
         help="Path to data file for training SINDy model",
     )
 
@@ -440,11 +609,16 @@ if __name__ == "__main__":
         "--output", type=str, default=None, help="Directory to save results"
     )
     parser.add_argument(
-        "--controller",
+        "--env-params",
         type=str,
-        default="simple",
-        choices=["simple", "coordinated", "conservative"],
-        help="Type of controller to use",
+        default=None,
+        help="Path to the saved environment parameters",
+    )
+    parser.add_argument(
+        "--hysteresis",
+        type=float,
+        default=0.5,
+        help="Hysteresis parameter for temperature control",
     )
 
     args = parser.parse_args()
@@ -455,6 +629,8 @@ if __name__ == "__main__":
         output_dir=args.output,
         num_episodes=args.episodes,
         render=not args.no_render,
-        controller_type=args.controller,
+        env_params_path=args.env_params,
+        hysteresis=args.hysteresis,
     )
-#  python rule_based_controller.py --data ../Data/dollhouse-data-2025-03-24.csv --episode 5
+
+# python rule_based_controller.py --data "../Data/dollhouse-data-2025-03-24.csv" --episodes 10  --env-param "results/ppo_20250513_151705/env_params.json" --no-render

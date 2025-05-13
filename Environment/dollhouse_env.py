@@ -128,7 +128,7 @@ class DollhouseThermalEnv(gym.Env):
             # One full cycle per day
             time = np.linspace(0, 2 * np.pi, time_steps)
             base_temp = 20.0  # Base temperature
-            amplitude = 2.0  # Amplitude of the sine wave
+            amplitude = 4.0  # Amplitude of the sine wave
 
             # Generate temperatures with a sine wave plus some noise
             temperatures = (
@@ -321,79 +321,41 @@ class DollhouseThermalEnv(gym.Env):
         self, ground_temp: float, top_temp: float, action: np.ndarray
     ) -> float:
         """
-        Calculate the reward based on comfort and energy use.
-
-        The reward function is a weighted sum of comfort and energy penalties.
-        Comfort is penalized when temperatures are far from their setpoints.
-        Energy is penalized when lights are used, and when windows are open during
-        hot or cold weather.
+        Calculate reward based on how well temperatures are maintained within setpoint range.
 
         Args:
             ground_temp: Current ground floor temperature
             top_temp: Current top floor temperature
-            action: Current action (used to calculate energy penalties)
+            action: Current action (not directly used in simplified reward)
 
         Returns:
             float: The calculated reward
         """
-        # Comfort penalty (how far temperatures are from setpoints)
-        ground_comfort_penalty = 0
-        top_comfort_penalty = 0
+        # Calculate temperature deviations from the comfortable range
+        ground_deviation = 0
+        top_deviation = 0
 
-        # For heating mode (temp below heating setpoint)
+        # For ground floor: Check if temperature is outside the comfortable range
         if ground_temp < self.heating_setpoint:
-            ground_comfort_penalty = abs(self.heating_setpoint - ground_temp) ** 2
-        # For cooling mode (temp above cooling setpoint)
+            ground_deviation = self.heating_setpoint - ground_temp
         elif ground_temp > self.cooling_setpoint:
-            ground_comfort_penalty = abs(ground_temp - self.cooling_setpoint) ** 2
+            ground_deviation = ground_temp - self.cooling_setpoint
 
-        # Same for top floor
+        # For top floor: Check if temperature is outside the comfortable range
         if top_temp < self.heating_setpoint:
-            top_comfort_penalty = abs(self.heating_setpoint - top_temp) ** 2
+            top_deviation = self.heating_setpoint - top_temp
         elif top_temp > self.cooling_setpoint:
-            top_comfort_penalty = abs(top_temp - self.cooling_setpoint) ** 2
+            top_deviation = top_temp - self.cooling_setpoint
 
-        # Total comfort penalty
-        comfort_penalty = (
-            ground_comfort_penalty + top_comfort_penalty
-        ) * self.comfort_weight
+        # Calculate total deviation (penalize being outside the comfort range)
+        total_deviation = ground_deviation + top_deviation
 
-        # Energy penalty (lights consume energy)
-        energy_use = action[0] + action[2]  # ground_light + top_light
-        energy_penalty = energy_use * self.energy_weight
-
-        # Opening windows may have energy implications depending on outside temperature
-        ext_temp = self.external_temperatures[self.current_step]
-
-        window_penalty = 0
-        # If it's cold outside and windows are open (heating wasted)
-        if ext_temp < self.heating_setpoint:
-            window_penalty += (
-                (action[1] + action[3])
-                * abs(ext_temp - self.heating_setpoint)
-                * self.energy_weight
-            )
-        # If it's hot outside and windows are open (cooling wasted)
-        elif ext_temp > self.cooling_setpoint:
-            window_penalty += (
-                (action[1] + action[3])
-                * abs(ext_temp - self.cooling_setpoint)
-                * self.energy_weight
-            )
-
-        # Calculate final reward (negative penalties)
-        if self.reward_type == "comfort":
-            # Prioritize comfort over energy use
-            reward = -comfort_penalty - 0.1 * (energy_penalty + window_penalty)
-        elif self.reward_type == "energy":
-            # Prioritize energy savings over strict comfort
-            reward = -0.1 * comfort_penalty - (energy_penalty + window_penalty)
-        elif self.reward_type == "balanced":
-            # Equal weighting
-            reward = -comfort_penalty - (energy_penalty + window_penalty)
-        else:
-            # Default to balanced
-            reward = -comfort_penalty - (energy_penalty + window_penalty)
+        # Small penalty for energy use to discourage unnecessary actions
+        # This is optional and can be removed if you want to focus only on temperature
+        # energy_penalty = 0.1 * sum(action)
+        energy_penalty = 0.0
+        # Final reward: higher when temperatures are in range, lower when they deviate
+        reward = 1.0 - total_deviation - energy_penalty
 
         return reward
 

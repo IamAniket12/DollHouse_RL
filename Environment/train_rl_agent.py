@@ -1,128 +1,17 @@
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
 import os
 import time
 from datetime import datetime
 import argparse
 import json
-from normalized_observation_wrapper import NormalizedObservationWrapper
 
 # Import Stable Baselines
 from stable_baselines3 import PPO, A2C, DQN, SAC
-from stable_baselines3.common.evaluation import evaluate_policy
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from stable_baselines3.common.callbacks import CheckpointCallback
 
 # Import our modules
 from train_sindy_model import train_sindy_model
 from dollhouse_env import DollhouseThermalEnv
-
-
-def create_rule_based_controller(hysteresis=0.5):
-    """
-    Create a simple rule-based controller.
-
-    Args:
-        hysteresis: Temperature buffer to prevent oscillation
-
-    Returns:
-        function: Rule-based controller function
-    """
-
-    def controller(observation):
-        # Extract state variables
-        ground_temp = observation[0]
-        top_temp = observation[1]
-        external_temp = observation[2]
-        heating_setpoint = observation[7]
-        cooling_setpoint = observation[8]
-
-        # Initialize action
-        action = np.zeros(4, dtype=int)
-
-        # Average setpoint for decision boundary
-        avg_setpoint = (heating_setpoint + cooling_setpoint) / 2
-
-        # Ground floor control logic
-        if ground_temp < avg_setpoint - hysteresis:
-            # Too cold - turn on light for heat, close window
-            action[0] = 1  # Turn ON ground light
-            action[1] = 0  # Close ground window
-        else:
-            # Too hot - turn off light, open window
-            action[0] = 0  # Turn OFF ground light
-            action[1] = 1  # Open ground window
-
-        # Top floor control logic (same approach)
-        if top_temp < avg_setpoint - hysteresis:
-            # Too cold - turn on light for heat, close window
-            action[2] = 1  # Turn ON top light
-            action[3] = 0  # Close top window
-        else:
-            # Too hot - turn off light, open window
-            action[2] = 0  # Turn OFF top light
-            action[3] = 1  # Open top window
-
-        return action
-
-    return controller
-
-
-def evaluate_controller(
-    env, controller, num_episodes=5, is_rl_agent=False, render=False
-):
-    """
-    Evaluate a controller on the environment.
-
-    Args:
-        env: The environment to evaluate on
-        controller: The controller (function for rule-based, model for RL)
-        num_episodes: Number of episodes to evaluate
-        is_rl_agent: Whether the controller is an RL agent
-        render: Whether to render the environment
-
-    Returns:
-        dict: Evaluation results
-    """
-    total_rewards = []
-
-    for episode in range(num_episodes):
-        obs = env.reset()
-        done = False
-        episode_reward = 0
-
-        while not done:
-            # Select action using controller
-            if is_rl_agent:
-                action, _ = controller.predict(obs, deterministic=True)
-            else:
-                action = controller(obs)
-
-            # Take action in environment
-            obs, reward, done, info = env.step(action)
-
-            episode_reward += reward
-
-            if render:
-                env.render()
-
-        total_rewards.append(episode_reward)
-        print(
-            f"Episode {episode+1}/{num_episodes}: Total Reward = {episode_reward:.2f}"
-        )
-
-    # Get performance summary
-    performance = env.get_performance_summary()
-
-    print("\nController Evaluation Summary:")
-    print(f"Average Total Reward: {performance['avg_total_reward']:.2f}")
-    print(f"Ground Floor Comfort %: {performance['avg_ground_comfort_pct']:.2f}%")
-    print(f"Top Floor Comfort %: {performance['avg_top_comfort_pct']:.2f}%")
-    print(f"Average Light Hours: {performance['avg_light_hours']:.2f}")
-
-    return performance
 
 
 def train_rl_agent(
@@ -139,7 +28,7 @@ def train_rl_agent(
         log_dir: Directory for tensorboard logs
 
     Returns:
-        model: Trained model
+        model: Trained model and model path
     """
     # Create directories
     os.makedirs(log_dir, exist_ok=True)
@@ -209,38 +98,34 @@ def train_rl_agent(
     model.save(final_model_path)
     print(f"Final model saved to {final_model_path}")
 
-    return model
+    return model, final_model_path
 
 
-def run_comparison(
+def setup_training(
     data_file,
     output_dir=None,
     algorithm="ppo",
     total_timesteps=5000000,
-    eval_episodes=5,
-    render=True,
-    compare_rule_based=True,
     reward_type="balanced",
     energy_weight=0.5,
     comfort_weight=1.0,
+    seed=0,
 ):
     """
-    Run a full comparison between controllers.
+    Set up and train an RL agent.
 
     Args:
         data_file: Path to data file for training SINDy model
-        output_dir: Directory to save results
-        algorithm: RL algorithm to use
+        output_dir: Directory to save results (default: auto-generated)
+        algorithm: RL algorithm to use ('ppo', 'a2c', 'dqn', or 'sac')
         total_timesteps: Total timesteps for training
-        eval_episodes: Number of episodes for evaluation
-        render: Whether to render during evaluation
-        compare_rule_based: Whether to compare with rule-based controller
         reward_type: Type of reward function ('comfort', 'energy', or 'balanced')
         energy_weight: Weight for energy penalty in reward
         comfort_weight: Weight for comfort penalty in reward
+        seed: Random seed for reproducibility
 
     Returns:
-        dict: Results
+        tuple: (model, model_path)
     """
     # Set output directory
     if output_dir is None:
@@ -268,9 +153,8 @@ def run_comparison(
         "comfort_weight": comfort_weight,
     }
 
-    # Create environment
+    # Create base environment
     env = DollhouseThermalEnv(**env_params)
-    # env = NormalizedObservationWrapper(env)
 
     # Save environment parameters
     with open(os.path.join(output_dir, "env_params.json"), "w") as f:
@@ -279,138 +163,34 @@ def run_comparison(
         serializable_params["sindy_model"] = "SINDy model object (not serializable)"
         json.dump(serializable_params, f, indent=4)
 
-    results = {}
-
-    # Evaluate rule-based controller if requested
-    if compare_rule_based:
-        print("\nEvaluating Rule-Based Controller...")
-        rule_controller = create_rule_based_controller(hysteresis=0.5)
-        rule_performance = evaluate_controller(
-            env=env,
-            controller=rule_controller,
-            num_episodes=eval_episodes,
-            is_rl_agent=False,
-            render=render,
-        )
-
-        # Save rule-based results
-        env.save_results(
-            os.path.join(output_dir, "rule_based_results.json"),
-            controller_name="Rule-Based Controller",
-        )
-
-        results["rule_based"] = rule_performance
-
     # Train RL agent
     print(f"\nTraining {algorithm.upper()} agent...")
-    rl_model = train_rl_agent(
+    model, model_path = train_rl_agent(
         env=env,
         algorithm=algorithm,
         total_timesteps=total_timesteps,
+        seed=seed,
         log_dir=os.path.join(output_dir, "logs"),
     )
 
-    # Evaluate RL agent
-    print(f"\nEvaluating {algorithm.upper()} agent...")
-    rl_performance = evaluate_controller(
-        env=env,
-        controller=rl_model,
-        num_episodes=eval_episodes,
-        is_rl_agent=True,
-        render=render,
-    )
+    print(f"\nTraining completed. Model saved to {model_path}")
 
-    # Save RL agent results
-    env.save_results(
-        os.path.join(output_dir, f"{algorithm}_results.json"),
-        controller_name=f"{algorithm.upper()} Agent",
-    )
+    # Record training configuration
+    config = {
+        "algorithm": algorithm,
+        "total_timesteps": total_timesteps,
+        "reward_type": reward_type,
+        "energy_weight": energy_weight,
+        "comfort_weight": comfort_weight,
+        "model_path": model_path,
+        "training_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "seed": seed,
+    }
 
-    results["rl_agent"] = rl_performance
+    with open(os.path.join(output_dir, "training_config.json"), "w") as f:
+        json.dump(config, f, indent=4)
 
-    # Compare and visualize results if both controllers were evaluated
-    if compare_rule_based:
-        # Create comparison plot
-        plt.figure(figsize=(12, 8))
-
-        # Metrics to plot
-        plot_metrics = [
-            ("avg_total_reward", "Total Reward"),
-            ("avg_ground_comfort_pct", "Ground Floor Comfort %"),
-            ("avg_top_comfort_pct", "Top Floor Comfort %"),
-            ("avg_light_hours", "Light Hours"),
-        ]
-
-        for i, (metric, label) in enumerate(plot_metrics):
-            plt.subplot(2, 2, i + 1)
-
-            rule_val = rule_performance.get(metric, 0)
-            rl_val = rl_performance.get(metric, 0)
-
-            bars = plt.bar(["Rule-Based", algorithm.upper()], [rule_val, rl_val])
-
-            # Add value labels
-            for bar in bars:
-                height = bar.get_height()
-                plt.text(
-                    bar.get_x() + bar.get_width() / 2.0,
-                    height + 0.1,
-                    f"{height:.2f}",
-                    ha="center",
-                    va="bottom",
-                )
-
-            plt.title(label)
-            plt.grid(True, alpha=0.3)
-
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, "comparison_plot.png"))
-        plt.close()
-
-        # Create a summary table
-        print("\nPerformance Comparison:")
-        print("-" * 80)
-        print(f"{'Metric':<30} {'Rule-Based':<20} {algorithm.upper():<20}")
-        print("-" * 80)
-
-        metrics = [
-            ("Total Reward", "avg_total_reward"),
-            ("Ground Floor Comfort %", "avg_ground_comfort_pct"),
-            ("Top Floor Comfort %", "avg_top_comfort_pct"),
-            ("Average Light Hours", "avg_light_hours"),
-        ]
-
-        for label, key in metrics:
-            rule_val = rule_performance.get(key, "N/A")
-            rl_val = rl_performance.get(key, "N/A")
-
-            if isinstance(rule_val, (int, float)) and isinstance(rl_val, (int, float)):
-                print(f"{label:<30} {rule_val:<20.2f} {rl_val:<20.2f}")
-            else:
-                print(f"{label:<30} {rule_val:<20} {rl_val:<20}")
-
-        print("-" * 80)
-
-        # Save comparison summary
-        comparison_summary = {
-            "rule_based": rule_performance,
-            "rl_agent": {"algorithm": algorithm, "performance": rl_performance},
-            "parameters": {
-                "data_file": data_file,
-                "total_timesteps": total_timesteps,
-                "eval_episodes": eval_episodes,
-                "reward_type": reward_type,
-                "energy_weight": energy_weight,
-                "comfort_weight": comfort_weight,
-            },
-        }
-
-        with open(os.path.join(output_dir, "comparison_summary.json"), "w") as f:
-            json.dump(comparison_summary, f, indent=4)
-
-    print(f"\nResults saved to {output_dir}")
-
-    return results
+    return model, model_path
 
 
 if __name__ == "__main__":
@@ -438,21 +218,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--timesteps", type=int, default=5000000, help="Total timesteps for training"
     )
-
-    # Evaluation parameters
     parser.add_argument(
-        "--episodes", type=int, default=5, help="Number of episodes for evaluation"
-    )
-    parser.add_argument(
-        "--no-render", action="store_true", help="Disable rendering during evaluation"
-    )
-    parser.add_argument(
-        "--no-rule-based",
-        action="store_true",
-        help="Skip rule-based controller comparison",
+        "--seed", type=int, default=0, help="Random seed for reproducibility"
     )
 
-    # Reward parameters
+    # Environment parameters
     parser.add_argument(
         "--reward",
         type=str,
@@ -463,7 +233,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--energy-weight",
         type=float,
-        default=0.5,
+        default=0.1,
         help="Weight for energy penalty in reward",
     )
     parser.add_argument(
@@ -480,16 +250,21 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Run comparison
-    run_comparison(
+    # Train RL agent
+    model, model_path = setup_training(
         data_file=args.data,
         output_dir=args.output,
         algorithm=args.algorithm,
         total_timesteps=args.timesteps,
-        eval_episodes=args.episodes,
-        render=not args.no_render,
-        compare_rule_based=not args.no_rule_based,
         reward_type=args.reward,
         energy_weight=args.energy_weight,
         comfort_weight=args.comfort_weight,
+        seed=args.seed,
     )
+
+    print(f"Training complete!")
+    print(f"Model saved to: {model_path}")
+    print(f"Use this path when evaluating the model.")
+
+# Example usage:
+# python train_rl_agent.py --data "../Data/dollhouse-data-2025-03-24.csv" --algorithm ppo --timesteps 100000 --reward balanced
