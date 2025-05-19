@@ -186,7 +186,7 @@ class DollhouseThermalEnv(gym.Env):
             # Default to constant temperature with some noise
             base_temp = 20.0
             # temperatures = base_temp
-            temperatures = base_temp + np.random.normal(0, 0.2, time_steps)
+            temperatures = base_temp + np.random.normal(0, 0.3, time_steps)
 
         return temperatures
 
@@ -216,7 +216,7 @@ class DollhouseThermalEnv(gym.Env):
         elif self.setpoint_pattern == "schedule":
             # Scheduled setpoints based on time of day
             if 8 <= hour < 18:  # Daytime (8am to 6pm)
-                return 21.0, 24.0  # Narrower comfort band during day
+                return 22.0, 24.0  # Narrower comfort band during day
             else:  # Night time
                 return 19.0, 26.0  # Wider comfort band at night
 

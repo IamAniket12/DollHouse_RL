@@ -1,0 +1,242 @@
+{
+    "controller_name": "Simple Rule-Based Controller",
+    "num_episodes": 10,
+    "environment_params": {
+        "episode_length": 1000,
+        "time_step_seconds": 30,
+        "heating_setpoint": 26.0,
+        "cooling_setpoint": 28.0,
+        "setpoint_pattern": "fixed",
+        "reward_type": "balanced",
+        "energy_weight": 0.1,
+        "comfort_weight": 1.0
+    },
+    "episodes": [
+        {
+            "episode_id": 0,
+            "total_reward": 941.2451880031856,
+            "avg_reward": 0.9403048831200655,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.051210027133767946,
+                "ground_floor_avg_hot_violation": 0.0,
+                "ground_floor_max_violation": 4.0,
+                "top_floor_avg_cold_violation": 0.014479095740172542,
+                "top_floor_avg_hot_violation": 0.0,
+                "top_floor_max_violation": 3.0,
+                "time_in_comfort_band_ground_pct": 97.1028971028971,
+                "time_in_comfort_band_top_pct": 99.1008991008991
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.716666666666667,
+                "top_light_hours": 1.375,
+                "total_light_hours": 6.091666666666667,
+                "ground_window_open_hours": 3.6166666666666667,
+                "top_window_open_hours": 6.958333333333333
+            }
+        },
+        {
+            "episode_id": 1,
+            "total_reward": 941.057999002698,
+            "avg_reward": 0.9401178811215765,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.05101217892283994,
+                "ground_floor_avg_hot_violation": 0.0,
+                "ground_floor_max_violation": 4.0,
+                "top_floor_avg_cold_violation": 0.014863945949589627,
+                "top_floor_avg_hot_violation": 0.0,
+                "top_floor_max_violation": 3.0,
+                "time_in_comfort_band_ground_pct": 97.1028971028971,
+                "time_in_comfort_band_top_pct": 99.000999000999
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.716666666666667,
+                "top_light_hours": 1.375,
+                "total_light_hours": 6.091666666666667,
+                "ground_window_open_hours": 3.6166666666666667,
+                "top_window_open_hours": 6.958333333333333
+            }
+        },
+        {
+            "episode_id": 2,
+            "total_reward": 940.9810988331876,
+            "avg_reward": 0.9400410577754122,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.05114743335480202,
+                "ground_floor_avg_hot_violation": 0.0,
+                "ground_floor_max_violation": 4.0,
+                "top_floor_avg_cold_violation": 0.014805514863791754,
+                "top_floor_avg_hot_violation": 0.0,
+                "top_floor_max_violation": 3.0,
+                "time_in_comfort_band_ground_pct": 97.1028971028971,
+                "time_in_comfort_band_top_pct": 99.000999000999
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.716666666666667,
+                "top_light_hours": 1.375,
+                "total_light_hours": 6.091666666666667,
+                "ground_window_open_hours": 3.6166666666666667,
+                "top_window_open_hours": 6.958333333333333
+            }
+        },
+        {
+            "episode_id": 3,
+            "total_reward": 940.9376281117953,
+            "avg_reward": 0.939997630481314,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.05158780940879409,
+                "ground_floor_avg_hot_violation": 0.0,
+                "ground_floor_max_violation": 4.0,
+                "top_floor_avg_cold_violation": 0.014408566103897891,
+                "top_floor_avg_hot_violation": 0.0,
+                "top_floor_max_violation": 3.0,
+                "time_in_comfort_band_ground_pct": 97.1028971028971,
+                "time_in_comfort_band_top_pct": 99.000999000999
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.716666666666667,
+                "top_light_hours": 1.375,
+                "total_light_hours": 6.091666666666667,
+                "ground_window_open_hours": 3.6166666666666667,
+                "top_window_open_hours": 6.958333333333333
+            }
+        },
+        {
+            "episode_id": 4,
+            "total_reward": 941.0588415591423,
+            "avg_reward": 0.9401187228363059,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.05084449540604988,
+                "ground_floor_avg_hot_violation": 0.0,
+                "ground_floor_max_violation": 4.0,
+                "top_floor_avg_cold_violation": 0.01503078775165014,
+                "top_floor_avg_hot_violation": 0.0,
+                "top_floor_max_violation": 3.0,
+                "time_in_comfort_band_ground_pct": 97.2027972027972,
+                "time_in_comfort_band_top_pct": 99.000999000999
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.708333333333333,
+                "top_light_hours": 1.3666666666666667,
+                "total_light_hours": 6.075,
+                "ground_window_open_hours": 3.625,
+                "top_window_open_hours": 6.966666666666667
+            }
+        },
+        {
+            "episode_id": 5,
+            "total_reward": 941.1225274982895,
+            "avg_reward": 0.9401823451531364,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.05108043306601194,
+                "ground_floor_avg_hot_violation": 0.0,
+                "ground_floor_max_violation": 4.0,
+                "top_floor_avg_cold_violation": 0.014731227774857667,
+                "top_floor_avg_hot_violation": 0.0,
+                "top_floor_max_violation": 3.0,
+                "time_in_comfort_band_ground_pct": 97.1028971028971,
+                "time_in_comfort_band_top_pct": 99.000999000999
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.716666666666667,
+                "top_light_hours": 1.375,
+                "total_light_hours": 6.091666666666667,
+                "ground_window_open_hours": 3.6166666666666667,
+                "top_window_open_hours": 6.958333333333333
+            }
+        },
+        {
+            "episode_id": 6,
+            "total_reward": 940.5505839684977,
+            "avg_reward": 0.9396109729955022,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.05112997044691653,
+                "ground_floor_avg_hot_violation": 0.0,
+                "ground_floor_max_violation": 4.0,
+                "top_floor_avg_cold_violation": 0.015253062551587326,
+                "top_floor_avg_hot_violation": 0.0,
+                "top_floor_max_violation": 3.0,
+                "time_in_comfort_band_ground_pct": 97.1028971028971,
+                "time_in_comfort_band_top_pct": 99.000999000999
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.708333333333333,
+                "top_light_hours": 1.375,
+                "total_light_hours": 6.083333333333333,
+                "ground_window_open_hours": 3.625,
+                "top_window_open_hours": 6.958333333333333
+            }
+        },
+        {
+            "episode_id": 7,
+            "total_reward": 940.6010437849685,
+            "avg_reward": 0.9396613824025659,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.05160959356325429,
+                "ground_floor_avg_hot_violation": 0.0,
+                "ground_floor_max_violation": 4.0,
+                "top_floor_avg_cold_violation": 0.014723030028185771,
+                "top_floor_avg_hot_violation": 0.0,
+                "top_floor_max_violation": 3.0,
+                "time_in_comfort_band_ground_pct": 97.1028971028971,
+                "time_in_comfort_band_top_pct": 99.000999000999
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.708333333333333,
+                "top_light_hours": 1.375,
+                "total_light_hours": 6.083333333333333,
+                "ground_window_open_hours": 3.625,
+                "top_window_open_hours": 6.958333333333333
+            }
+        },
+        {
+            "episode_id": 8,
+            "total_reward": 941.3175942381291,
+            "avg_reward": 0.940377217021108,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.05079884185198432,
+                "ground_floor_avg_hot_violation": 0.0,
+                "ground_floor_max_violation": 4.0,
+                "top_floor_avg_cold_violation": 0.014817947120913694,
+                "top_floor_avg_hot_violation": 0.0,
+                "top_floor_max_violation": 3.0,
+                "time_in_comfort_band_ground_pct": 97.1028971028971,
+                "time_in_comfort_band_top_pct": 99.000999000999
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.7,
+                "top_light_hours": 1.375,
+                "total_light_hours": 6.075,
+                "ground_window_open_hours": 3.6333333333333333,
+                "top_window_open_hours": 6.958333333333333
+            }
+        },
+        {
+            "episode_id": 9,
+            "total_reward": 940.583473219981,
+            "avg_reward": 0.9396438293905904,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.051608103418700625,
+                "ground_floor_avg_hot_violation": 0.0,
+                "ground_floor_max_violation": 4.0,
+                "top_floor_avg_cold_violation": 0.014742073184714892,
+                "top_floor_avg_hot_violation": 0.0,
+                "top_floor_max_violation": 3.0,
+                "time_in_comfort_band_ground_pct": 97.002997002997,
+                "time_in_comfort_band_top_pct": 99.000999000999
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.716666666666667,
+                "top_light_hours": 1.375,
+                "total_light_hours": 6.091666666666667,
+                "ground_window_open_hours": 3.6166666666666667,
+                "top_window_open_hours": 6.958333333333333
+            }
+        }
+    ],
+    "overall_metrics": {
+        "avg_total_reward": 940.9455978219873,
+        "avg_ground_comfort_pct": 97.1028971028971,
+        "avg_top_comfort_pct": 99.01098901098901,
+        "avg_light_energy": 6.086666666666668
+    }
+}

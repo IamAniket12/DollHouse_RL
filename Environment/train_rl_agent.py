@@ -142,12 +142,12 @@ def setup_training(
     # Create environment
     env_params = {
         "sindy_model": sindy_model,
-        "episode_length": 1000,  # 24 hours with 30-second timesteps
+        "episode_length": 2880,  # 24 hours with 30-second timesteps
         "time_step_seconds": 30,
         "heating_setpoint": 26.0,
         "cooling_setpoint": 28.0,
         "external_temp_pattern": "fixed",
-        "setpoint_pattern": "fixed",
+        "setpoint_pattern": "schedule",
         "reward_type": reward_type,
         "energy_weight": energy_weight,
         "comfort_weight": comfort_weight,

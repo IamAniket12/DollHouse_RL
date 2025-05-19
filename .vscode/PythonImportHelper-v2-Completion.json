@@ -219,6 +219,14 @@
         "documentation": {}
     },
     {
+        "label": "datetime",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
         "label": "pandas",
         "kind": 6,
         "isExtraImport": true,
@@ -1120,6 +1128,14 @@
         "documentation": {}
     },
     {
+        "label": "PPO",
+        "importPath": "stable_baselines3",
+        "description": "stable_baselines3",
+        "isExtraImport": true,
+        "detail": "stable_baselines3",
+        "documentation": {}
+    },
+    {
         "label": "evaluate_policy",
         "importPath": "stable_baselines3.common.evaluation",
         "description": "stable_baselines3.common.evaluation",
@@ -1999,6 +2015,15 @@
         "description": "pysindy.feature_library",
         "isExtraImport": true,
         "detail": "pysindy.feature_library",
+        "documentation": {}
+    },
+    {
+        "label": "seaborn",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "seaborn",
+        "description": "seaborn",
+        "detail": "seaborn",
         "documentation": {}
     },
     {
@@ -4509,15 +4534,6 @@
         "documentation": {}
     },
     {
-        "label": "seaborn",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "seaborn",
-        "description": "seaborn",
-        "detail": "seaborn",
-        "documentation": {}
-    },
-    {
         "label": "pyplot",
         "importPath": "matplotlib",
         "description": "matplotlib",
@@ -5509,15 +5525,6 @@
         "documentation": {}
     },
     {
-        "label": "NormalizedObservationWrapper",
-        "kind": 6,
-        "importPath": "Environment.normalized_observation_wrapper",
-        "description": "Environment.normalized_observation_wrapper",
-        "peekOfCode": "class NormalizedObservationWrapper(gym.Wrapper):\n    \"\"\"\n    A wrapper that normalizes observations using predefined min/max ranges.\n    Includes built-in default ranges for dollhouse environment observations.\n    \"\"\"\n    # Default ranges for dollhouse environment observations\n    DEFAULT_DOLLHOUSE_RANGES = {\n        0: (0.0, 40.0),  # Ground floor temperature (°C)\n        1: (0.0, 40.0),  # Top floor temperature (°C)\n        2: (-10.0, 40.0),  # External temperature (°C)",
-        "detail": "Environment.normalized_observation_wrapper",
-        "documentation": {}
-    },
-    {
         "label": "create_rule_based_controller",
         "kind": 2,
         "importPath": "Environment.rule_based_controller",
@@ -5713,6 +5720,51 @@
         "description": "Sindy.Training.training",
         "peekOfCode": "results_dir = None\ndef load_and_prepare_data(file_path, add_features=True, warmup_period_minutes=1):\n    \"\"\"\n    Load and prepare data for SINDy model training and testing\n    Parameters:\n    file_path (str): Path to the CSV data file\n    add_features (bool): Whether to add physics-informed features\n    warmup_period_minutes (float): Warmup period to exclude from analysis\n    Returns:\n    X (np.array): State variables (temperatures)",
         "detail": "Sindy.Training.training",
+        "documentation": {}
+    },
+    {
+        "label": "create_rule_based_controller",
+        "kind": 2,
+        "importPath": "Test.policy_comparison",
+        "description": "Test.policy_comparison",
+        "peekOfCode": "def create_rule_based_controller(heating_setpoint, cooling_setpoint, hysteresis=0.5):\n    \"\"\"\n    Create a simple rule-based controller.\n    \"\"\"\n    def controller(observation):\n        ground_temp = observation[0]\n        top_temp = observation[1]\n        action = np.zeros(4, dtype=int)\n        avg_setpoint = (heating_setpoint + cooling_setpoint) / 2\n        if ground_temp < avg_setpoint - hysteresis:",
+        "detail": "Test.policy_comparison",
+        "documentation": {}
+    },
+    {
+        "label": "create_observation",
+        "kind": 2,
+        "importPath": "Test.policy_comparison",
+        "description": "Test.policy_comparison",
+        "peekOfCode": "def create_observation(ground_temp, top_temp):\n    \"\"\"\n    Create observation vector for the environment.\n    \"\"\"\n    obs = np.zeros(11)\n    obs[0], obs[1], obs[2] = ground_temp, top_temp, 22.0  # Temperatures\n    obs[7], obs[8] = 26.0, 28.0  # Heating and cooling setpoints\n    return obs.astype(np.float32)\ndef record_policy_actions(\n    controller, temp_range, output_file, is_rl_model=False, deterministic=True",
+        "detail": "Test.policy_comparison",
+        "documentation": {}
+    },
+    {
+        "label": "record_policy_actions",
+        "kind": 2,
+        "importPath": "Test.policy_comparison",
+        "description": "Test.policy_comparison",
+        "peekOfCode": "def record_policy_actions(\n    controller, temp_range, output_file, is_rl_model=False, deterministic=True\n):\n    \"\"\"\n    Record actions from a policy across a range of temperatures.\n    \"\"\"\n    data = []\n    for ground_temp in temp_range:\n        for top_temp in temp_range:\n            obs = create_observation(ground_temp, top_temp)",
+        "detail": "Test.policy_comparison",
+        "documentation": {}
+    },
+    {
+        "label": "visualize_policy",
+        "kind": 2,
+        "importPath": "Test.policy_comparison",
+        "description": "Test.policy_comparison",
+        "peekOfCode": "def visualize_policy(csv_files, labels, temp_range, output_dir, save_format=\"pdf\"):\n    \"\"\"\n    Visualize and compare policies from CSV files.\n    \"\"\"\n    os.makedirs(output_dir, exist_ok=True)\n    sns.set_style(\"whitegrid\")\n    for csv_file, label in zip(csv_files, labels):\n        df = pd.read_csv(csv_file)\n        # Temperature values should already be rounded in the CSV,\n        # but ensure they are rounded to 2 decimal places just in case",
+        "detail": "Test.policy_comparison",
+        "documentation": {}
+    },
+    {
+        "label": "main",
+        "kind": 2,
+        "importPath": "Test.policy_comparison",
+        "description": "Test.policy_comparison",
+        "peekOfCode": "def main():\n    parser = argparse.ArgumentParser(description=\"Record and visualize policy actions.\")\n    parser.add_argument(\n        \"--model\", type=str, required=True, help=\"Path to the trained PPO model\"\n    )\n    parser.add_argument(\n        \"--output\", type=str, default=None, help=\"Directory to save results\"\n    )\n    parser.add_argument(\n        \"--format\",",
+        "detail": "Test.policy_comparison",
         "documentation": {}
     },
     {
