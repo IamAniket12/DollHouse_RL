@@ -5511,7 +5511,7 @@
         "kind": 2,
         "importPath": "Environment.evaluate_rl_agent",
         "description": "Environment.evaluate_rl_agent",
-        "peekOfCode": "def visualize_performance(performance, output_dir, agent_name=\"RL Agent\"):\n    \"\"\"\n    Create visualizations of agent performance.\n    Args:\n        performance: Performance dictionary from evaluate_agent\n        output_dir: Directory to save visualizations\n        agent_name: Name of the agent for plot titles\n    \"\"\"\n    os.makedirs(output_dir, exist_ok=True)\n    # Extract environment parameters",
+        "peekOfCode": "def visualize_performance(performance, output_dir, agent_name=\"RL Agent\"):\n    \"\"\"\n    Create visualizations of agent performance with dynamic setpoint support.\n    Args:\n        performance: Performance dictionary from evaluate_agent\n        output_dir: Directory to save visualizations\n        agent_name: Name of the agent for plot titles\n    \"\"\"\n    os.makedirs(output_dir, exist_ok=True)\n    # Extract episode data",
         "detail": "Environment.evaluate_rl_agent",
         "documentation": {}
     },
@@ -5547,7 +5547,7 @@
         "kind": 2,
         "importPath": "Environment.rule_based_controller",
         "description": "Environment.rule_based_controller",
-        "peekOfCode": "def visualize_performance(\n    performance, output_dir, controller_name=\"Simple Rule-Based Controller\"\n):\n    \"\"\"\n    Create visualizations of controller performance.\n    Args:\n        performance: Performance dictionary from evaluate_controller\n        output_dir: Directory to save visualizations\n        controller_name: Name of the controller for plot titles\n    \"\"\"",
+        "peekOfCode": "def visualize_performance(\n    performance, output_dir, controller_name=\"Simple Rule-Based Controller\"\n):\n    \"\"\"\n    Create visualizations of controller performance with dynamic setpoint support.\n    Args:\n        performance: Performance dictionary from evaluate_controller\n        output_dir: Directory to save visualizations\n        controller_name: Name of the controller for plot titles\n    \"\"\"",
         "detail": "Environment.rule_based_controller",
         "documentation": {}
     },

@@ -144,7 +144,7 @@ class DollhouseThermalEnv(gym.Env):
             base_temp = 15.0
 
             for i in range(time_steps):
-                hour = (i * self.time_step_seconds / 60) % 24
+                hour = int((time_step * self.time_step_seconds / 3600) % 24)
 
                 # Daily cycle with morning and evening variations
                 if hour < 6:  # Night (midnight to 6am)
@@ -207,8 +207,8 @@ class DollhouseThermalEnv(gym.Env):
         """
 
         # Calculate current hour of the day
-        hour = (time_step * self.time_step_seconds / 60) % 24
-
+        hour = int((time_step * self.time_step_seconds / 3600) % 24)
+        print(f"Current hour: {hour}")
         if self.setpoint_pattern == "fixed":
             # Fixed setpoints throughout the day
             return self.heating_setpoint, self.cooling_setpoint

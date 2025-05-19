@@ -1,0 +1,10 @@
+{
+    "algorithm": "ppo",
+    "total_timesteps": 100000,
+    "reward_type": "balanced",
+    "energy_weight": 0.1,
+    "comfort_weight": 1.0,
+    "model_path": "results/ppo_20250519_122559/logs/models/ppo_final_model",
+    "training_date": "2025-05-19 12:27:24",
+    "seed": 0
+}

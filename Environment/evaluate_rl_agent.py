@@ -100,24 +100,38 @@ def evaluate_agent(
     episode_actions = []
     episode_rewards = []
     episode_external_temps = []
+    episode_setpoints = []  # NEW: Track setpoints over time
 
     for episode in range(num_episodes):
         obs = env.reset()
         done = False
         episode_reward = 0
 
-        # Track temperatures and actions for this episode
+        # Track temperatures, actions, and setpoints for this episode
         temps = []
         actions = []
         rewards = []
         ext_temps = []
+        setpoints = []  # NEW: Track heating and cooling setpoints
 
         while not done:
+            # ADDED: Get current setpoints before taking action
+            if hasattr(env, "get_setpoints"):
+                heating_sp, cooling_sp = env.get_setpoints()
+            else:
+                # Fallback: access setpoints directly
+                heating_sp = getattr(env, "heating_setpoint", 20.0)
+                cooling_sp = getattr(env, "cooling_setpoint", 24.0)
+
+            setpoints.append([heating_sp, cooling_sp])
+
             # Select action using model
             action, _ = model.predict(obs, deterministic=deterministic)
 
             if verbose:
-                print(f"Action: {action}")
+                print(
+                    f"Action: {action}, Setpoints: {heating_sp:.1f}°C / {cooling_sp:.1f}°C"
+                )
 
             # Take action in environment
             obs, reward, done, info = env.step(action)
@@ -138,6 +152,7 @@ def evaluate_agent(
         episode_external_temps.append(ext_temps)
         episode_actions.append(actions)
         episode_rewards.append(rewards)
+        episode_setpoints.append(setpoints)  # NEW: Store setpoints for this episode
 
         if verbose:
             print(
@@ -161,21 +176,32 @@ def evaluate_agent(
         "actions": episode_actions,
         "rewards": episode_rewards,
         "total_rewards": total_rewards,
+        "setpoints": episode_setpoints,  # NEW: Include setpoint data
     }
 
-    # Add environment parameters to performance dict
-    performance["heating_setpoint"] = env.heating_setpoint
-    performance["cooling_setpoint"] = env.cooling_setpoint
-    performance["reward_type"] = env.reward_type
-    performance["energy_weight"] = env.energy_weight
-    performance["comfort_weight"] = env.comfort_weight
+    # MODIFIED: Don't just use static setpoints
+    # Check if we have dynamic setpoints
+    if episode_setpoints and len(episode_setpoints[0]) > 0:
+        # Use the first setpoint as fallback for static displays
+        performance["heating_setpoint"] = episode_setpoints[0][0][0]
+        performance["cooling_setpoint"] = episode_setpoints[0][0][1]
+        performance["has_dynamic_setpoints"] = True
+    else:
+        # Fallback to environment attributes
+        performance["heating_setpoint"] = getattr(env, "heating_setpoint", 20.0)
+        performance["cooling_setpoint"] = getattr(env, "cooling_setpoint", 24.0)
+        performance["has_dynamic_setpoints"] = False
+
+    performance["reward_type"] = getattr(env, "reward_type", "unknown")
+    performance["energy_weight"] = getattr(env, "energy_weight", 1.0)
+    performance["comfort_weight"] = getattr(env, "comfort_weight", 1.0)
 
     return performance
 
 
 def visualize_performance(performance, output_dir, agent_name="RL Agent"):
     """
-    Create visualizations of agent performance.
+    Create visualizations of agent performance with dynamic setpoint support.
 
     Args:
         performance: Performance dictionary from evaluate_agent
@@ -184,69 +210,108 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    # Extract environment parameters
-    heating_setpoint = performance.get("heating_setpoint", 20.0)
-    cooling_setpoint = performance.get("cooling_setpoint", 24.0)
-
     # Extract episode data
     episode_temperatures = performance["episode_data"]["temperatures"]
     episode_external_temps = performance["episode_data"]["external_temps"]
     episode_actions = performance["episode_data"]["actions"]
     episode_rewards = performance["episode_data"]["rewards"]
+    episode_setpoints = performance["episode_data"].get("setpoints", [])
 
-    # Plot temperatures, actions, and rewards for the first episode
-    plt.figure(figsize=(15, 12))
+    # Check if we have dynamic setpoints
+    has_dynamic_setpoints = len(episode_setpoints) > 0 and len(episode_setpoints[0]) > 0
 
-    # Temperature plot
-    plt.subplot(4, 1, 1)
+    # Plot temperatures, actions, setpoints, and rewards for the first episode
+    plt.figure(figsize=(15, 16))  # Increased height for additional subplot
+
+    # Temperature plot with dynamic setpoints
+    plt.subplot(5, 1, 1)  # Changed from 4,1,1 to 5,1,1
     ground_temps = [temp[0] for temp in episode_temperatures[0]]
     top_temps = [temp[1] for temp in episode_temperatures[0]]
-    plt.plot(ground_temps, label="Ground Floor Temperature")
-    plt.plot(top_temps, label="Top Floor Temperature")
-    plt.axhline(
-        y=heating_setpoint,
-        color="r",
-        linestyle="--",
-        label=f"Heating Setpoint ({heating_setpoint}°C)",
-    )
-    plt.axhline(
-        y=cooling_setpoint,
-        color="b",
-        linestyle="--",
-        label=f"Cooling Setpoint ({cooling_setpoint}°C)",
-    )
+    plt.plot(ground_temps, label="Ground Floor Temperature", linewidth=2)
+    plt.plot(top_temps, label="Top Floor Temperature", linewidth=2)
+
+    if has_dynamic_setpoints:
+        # Plot dynamic setpoints
+        heating_setpoints = [sp[0] for sp in episode_setpoints[0]]
+        cooling_setpoints = [sp[1] for sp in episode_setpoints[0]]
+        plt.plot(heating_setpoints, "r--", label="Heating Setpoint", linewidth=1.5)
+        plt.plot(cooling_setpoints, "b--", label="Cooling Setpoint", linewidth=1.5)
+    else:
+        # Plot static setpoints
+        heating_setpoint = performance.get("heating_setpoint", 20.0)
+        cooling_setpoint = performance.get("cooling_setpoint", 24.0)
+        plt.axhline(
+            y=heating_setpoint,
+            color="r",
+            linestyle="--",
+            label=f"Heating Setpoint ({heating_setpoint}°C)",
+        )
+        plt.axhline(
+            y=cooling_setpoint,
+            color="b",
+            linestyle="--",
+            label=f"Cooling Setpoint ({cooling_setpoint}°C)",
+        )
+
     plt.title(f"{agent_name} - Temperatures (Episode 1)")
     plt.ylabel("Temperature (°C)")
     plt.legend()
     plt.grid(True, alpha=0.3)
 
+    # NEW: Separate setpoint plot for better visibility (only if dynamic)
+    if has_dynamic_setpoints:
+        plt.subplot(5, 1, 2)
+        heating_setpoints = [sp[0] for sp in episode_setpoints[0]]
+        cooling_setpoints = [sp[1] for sp in episode_setpoints[0]]
+        plt.plot(heating_setpoints, "r-", label="Heating Setpoint", linewidth=2)
+        plt.plot(cooling_setpoints, "b-", label="Cooling Setpoint", linewidth=2)
+        plt.title(f"{agent_name} - Dynamic Setpoints (Episode 1)")
+        plt.ylabel("Temperature (°C)")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        subplot_offset = 1
+    else:
+        subplot_offset = 0
+
     # External temperature plot
-    plt.subplot(4, 1, 2)
+    plt.subplot(5, 1, 2 + subplot_offset)
     ext_temps = episode_external_temps[0]
-    plt.plot(ext_temps, label="External Temperature", color="purple")
-    plt.axhline(
-        y=heating_setpoint,
-        color="r",
-        linestyle="--",
-        label=f"Heating Setpoint ({heating_setpoint}°C)",
-    )
-    plt.axhline(
-        y=cooling_setpoint,
-        color="b",
-        linestyle="--",
-        label=f"Cooling Setpoint ({cooling_setpoint}°C)",
-    )
+    plt.plot(ext_temps, label="External Temperature", color="purple", linewidth=2)
+
+    if has_dynamic_setpoints:
+        heating_setpoints = [sp[0] for sp in episode_setpoints[0]]
+        cooling_setpoints = [sp[1] for sp in episode_setpoints[0]]
+        plt.plot(heating_setpoints, "r--", alpha=0.7, label="Heating Setpoint")
+        plt.plot(cooling_setpoints, "b--", alpha=0.7, label="Cooling Setpoint")
+    else:
+        heating_setpoint = performance.get("heating_setpoint", 20.0)
+        cooling_setpoint = performance.get("cooling_setpoint", 24.0)
+        plt.axhline(
+            y=heating_setpoint,
+            color="r",
+            linestyle="--",
+            alpha=0.7,
+            label=f"Heating Setpoint ({heating_setpoint}°C)",
+        )
+        plt.axhline(
+            y=cooling_setpoint,
+            color="b",
+            linestyle="--",
+            alpha=0.7,
+            label=f"Cooling Setpoint ({cooling_setpoint}°C)",
+        )
+
     plt.title(f"{agent_name} - External Temperature (Episode 1)")
     plt.ylabel("Temperature (°C)")
     plt.legend()
     plt.grid(True, alpha=0.3)
 
     # Actions plot
-    plt.subplot(4, 1, 3)
+    plt.subplot(5, 1, 3 + subplot_offset)
     actions = np.array(episode_actions[0])
     action_names = ["Ground Light", "Ground Window", "Top Light", "Top Window"]
     for i, name in enumerate(action_names):
-        plt.plot(actions[:, i], label=name)
+        plt.plot(actions[:, i], label=name, linewidth=2)
     plt.title(f"{agent_name} - Actions (Episode 1)")
     plt.ylabel("Action State (0/1)")
     plt.ylim(-0.1, 1.1)
@@ -254,8 +319,8 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
     plt.grid(True, alpha=0.3)
 
     # Rewards plot
-    plt.subplot(4, 1, 4)
-    plt.plot(episode_rewards[0], label="Step Reward")
+    plt.subplot(5, 1, 4 + subplot_offset)
+    plt.plot(episode_rewards[0], label="Step Reward", linewidth=2)
     plt.title(f"{agent_name} - Rewards (Episode 1)")
     plt.xlabel("Timestep")
     plt.ylabel("Reward")
@@ -266,7 +331,9 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
     plt.savefig(
         os.path.join(
             output_dir, f'{agent_name.lower().replace(" ", "_")}_episode_analysis.png'
-        )
+        ),
+        dpi=300,
+        bbox_inches="tight",
     )
 
     # Summary metrics plot
@@ -295,35 +362,73 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
 
     plt.tight_layout()
     plt.savefig(
-        os.path.join(output_dir, f'{agent_name.lower().replace(" ", "_")}_summary.png')
+        os.path.join(output_dir, f'{agent_name.lower().replace(" ", "_")}_summary.png'),
+        dpi=300,
+        bbox_inches="tight",
     )
 
-    # Create temperature distribution plot (similar to your original script)
+    # Create temperature distribution plot with dynamic setpoint ranges
     plt.figure(figsize=(14, 6))
 
     # Combine all temperature data across episodes
     all_ground_temps = []
     all_top_temps = []
+    all_heating_setpoints = []
+    all_cooling_setpoints = []
 
-    for episode_temps in episode_temperatures:
+    for episode_idx, episode_temps in enumerate(episode_temperatures):
         all_ground_temps.extend([temp[0] for temp in episode_temps])
         all_top_temps.extend([temp[1] for temp in episode_temps])
 
+        if has_dynamic_setpoints and episode_idx < len(episode_setpoints):
+            all_heating_setpoints.extend(
+                [sp[0] for sp in episode_setpoints[episode_idx]]
+            )
+            all_cooling_setpoints.extend(
+                [sp[1] for sp in episode_setpoints[episode_idx]]
+            )
+
     # Ground floor temperature distribution
     plt.subplot(1, 2, 1)
-    plt.hist(all_ground_temps, bins=30, alpha=0.7)
-    plt.axvline(
-        x=heating_setpoint,
-        color="r",
-        linestyle="--",
-        label=f"Heating Setpoint ({heating_setpoint}°C)",
-    )
-    plt.axvline(
-        x=cooling_setpoint,
-        color="b",
-        linestyle="--",
-        label=f"Cooling Setpoint ({cooling_setpoint}°C)",
-    )
+    plt.hist(all_ground_temps, bins=30, alpha=0.7, edgecolor="black")
+
+    if has_dynamic_setpoints and all_heating_setpoints:
+        # Show setpoint ranges
+        min_heating = min(all_heating_setpoints)
+        max_heating = max(all_heating_setpoints)
+        min_cooling = min(all_cooling_setpoints)
+        max_cooling = max(all_cooling_setpoints)
+
+        plt.axvspan(
+            min_heating,
+            max_heating,
+            alpha=0.2,
+            color="red",
+            label=f"Heating Range ({min_heating:.1f}-{max_heating:.1f}°C)",
+        )
+        plt.axvspan(
+            min_cooling,
+            max_cooling,
+            alpha=0.2,
+            color="blue",
+            label=f"Cooling Range ({min_cooling:.1f}-{max_cooling:.1f}°C)",
+        )
+    else:
+        heating_setpoint = performance.get("heating_setpoint", 20.0)
+        cooling_setpoint = performance.get("cooling_setpoint", 24.0)
+        plt.axvline(
+            x=heating_setpoint,
+            color="r",
+            linestyle="--",
+            label=f"Heating Setpoint ({heating_setpoint}°C)",
+        )
+        plt.axvline(
+            x=cooling_setpoint,
+            color="b",
+            linestyle="--",
+            label=f"Cooling Setpoint ({cooling_setpoint}°C)",
+        )
+
     plt.title(f"{agent_name} - Ground Floor Temperature Distribution")
     plt.xlabel("Temperature (°C)")
     plt.ylabel("Frequency")
@@ -332,19 +437,39 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
 
     # Top floor temperature distribution
     plt.subplot(1, 2, 2)
-    plt.hist(all_top_temps, bins=30, alpha=0.7)
-    plt.axvline(
-        x=heating_setpoint,
-        color="r",
-        linestyle="--",
-        label=f"Heating Setpoint ({heating_setpoint}°C)",
-    )
-    plt.axvline(
-        x=cooling_setpoint,
-        color="b",
-        linestyle="--",
-        label=f"Cooling Setpoint ({cooling_setpoint}°C)",
-    )
+    plt.hist(all_top_temps, bins=30, alpha=0.7, edgecolor="black")
+
+    if has_dynamic_setpoints and all_heating_setpoints:
+        plt.axvspan(
+            min_heating,
+            max_heating,
+            alpha=0.2,
+            color="red",
+            label=f"Heating Range ({min_heating:.1f}-{max_heating:.1f}°C)",
+        )
+        plt.axvspan(
+            min_cooling,
+            max_cooling,
+            alpha=0.2,
+            color="blue",
+            label=f"Cooling Range ({min_cooling:.1f}-{max_cooling:.1f}°C)",
+        )
+    else:
+        heating_setpoint = performance.get("heating_setpoint", 20.0)
+        cooling_setpoint = performance.get("cooling_setpoint", 24.0)
+        plt.axvline(
+            x=heating_setpoint,
+            color="r",
+            linestyle="--",
+            label=f"Heating Setpoint ({heating_setpoint}°C)",
+        )
+        plt.axvline(
+            x=cooling_setpoint,
+            color="b",
+            linestyle="--",
+            label=f"Cooling Setpoint ({cooling_setpoint}°C)",
+        )
+
     plt.title(f"{agent_name} - Top Floor Temperature Distribution")
     plt.xlabel("Temperature (°C)")
     plt.ylabel("Frequency")
@@ -356,7 +481,9 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
         os.path.join(
             output_dir,
             f'{agent_name.lower().replace(" ", "_")}_temperature_distribution.png',
-        )
+        ),
+        dpi=300,
+        bbox_inches="tight",
     )
 
     print(f"Visualizations saved to {output_dir}")
@@ -411,6 +538,15 @@ def main(
     # Recreate environment
     env = recreate_environment(env_params_path, data_file)
 
+    # ADDED: Print environment setpoint configuration
+    print(f"\nEnvironment Configuration:")
+    if hasattr(env, "setpoint_pattern"):
+        print(f"Setpoint Pattern: {env.setpoint_pattern}")
+    if hasattr(env, "heating_setpoint"):
+        print(f"Base Heating Setpoint: {env.heating_setpoint}")
+    if hasattr(env, "cooling_setpoint"):
+        print(f"Base Cooling Setpoint: {env.cooling_setpoint}")
+
     # Evaluate agent
     print(
         f"\nEvaluating agent {'deterministically' if deterministic else 'stochastically'} for {num_episodes} episodes..."
@@ -437,9 +573,8 @@ def main(
     results_path = os.path.join(
         output_dir, f"{algorithm}_{stochastic_mode}_results.json"
     )
-    # Replace this part in your main function
+    # Convert numpy arrays to lists for JSON serialization
     with open(results_path, "w") as f:
-        # Convert numpy arrays to lists for JSON serialization
         serializable_perf = {}
         for key, value in performance.items():
             if key == "episode_data":
@@ -459,6 +594,14 @@ def main(
                         [float(r) for r in rewards] for rewards in value["rewards"]
                     ],
                     "total_rewards": [float(r) for r in value["total_rewards"]],
+                    "setpoints": (
+                        [  # NEW: Save setpoint data
+                            [[float(sp) for sp in setpoint] for setpoint in episode]
+                            for episode in value.get("setpoints", [])
+                        ]
+                        if "setpoints" in value
+                        else []
+                    ),
                 }
             elif isinstance(value, (np.integer, np.floating, np.ndarray)):
                 serializable_perf[key] = (
