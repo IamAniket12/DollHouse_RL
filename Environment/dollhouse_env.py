@@ -208,17 +208,19 @@ class DollhouseThermalEnv(gym.Env):
 
         # Calculate current hour of the day
         hour = int((time_step * self.time_step_seconds / 3600) % 24)
-        print(f"Current hour: {hour}")
+
         if self.setpoint_pattern == "fixed":
             # Fixed setpoints throughout the day
             return self.heating_setpoint, self.cooling_setpoint
 
         elif self.setpoint_pattern == "schedule":
             # Scheduled setpoints based on time of day
-            if 8 <= hour < 18:  # Daytime (8am to 6pm)
+            if 11 <= hour < 18:  # Daytime (8am to 6pm)
                 return 22.0, 24.0  # Narrower comfort band during day
+            elif 8 <= hour < 11:
+                return 26.0, 28.0
             else:  # Night time
-                return 19.0, 26.0  # Wider comfort band at night
+                return 20.0, 24.0  # Wider comfort band at night
 
         elif self.setpoint_pattern == "adaptive":
             # Adaptive setpoints that respond to external temperature
