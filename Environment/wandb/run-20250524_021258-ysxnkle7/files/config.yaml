@@ -1,0 +1,205 @@
+_current_progress_remaining:
+    value: 1
+_custom_logger:
+    value: "False"
+_episode_num:
+    value: 0
+_last_episode_starts:
+    value: '[ True  True  True  True]'
+_last_obs:
+    value: |-
+        [[ 0.00499484  0.00499528 -0.63621837  0.          0.          0.
+           0.          0.0049963   0.00499681  0.          0.        ]
+         [ 0.00499484  0.00499528 -0.38092843  0.          0.          0.
+           0.          0.0049963   0.00499681  0.          0.        ]
+         [ 0.00499484  0.00499528 -0.5626878   0.          0.          0.
+           0.          0.0049963   0.00499681  0.          0.        ]
+         [ 0.00499484  0.00499528  1.5876614   0.          0.          0.
+           0.          0.0049963   0.00499681  0.          0.        ]]
+_last_original_obs:
+    value: |-
+        [[22.       23.       20.03772   0.        0.        0.        0.
+          26.       28.        0.        0.      ]
+         [22.       23.       20.103676  0.        0.        0.        0.
+          26.       28.        0.        0.      ]
+         [22.       23.       20.056717  0.        0.        0.        0.
+          26.       28.        0.        0.      ]
+         [22.       23.       20.612276  0.        0.        0.        0.
+          26.       28.        0.        0.      ]]
+_logger:
+    value: <stable_baselines3.common.logger.Logger object at 0x365676e90>
+_n_updates:
+    value: 0
+_num_timesteps_at_start:
+    value: 0
+_stats_window_size:
+    value: 100
+_total_timesteps:
+    value: 5000000
+_vec_normalize_env:
+    value: <stable_baselines3.common.vec_env.vec_normalize.VecNormalize object at 0x320107990>
+_wandb:
+    value:
+        cli_version: 0.19.11
+        m: []
+        python_version: 3.11.5
+        t:
+            "1":
+                - 1
+                - 2
+                - 3
+                - 5
+                - 12
+                - 53
+                - 55
+                - 105
+            "2":
+                - 1
+                - 2
+                - 3
+                - 5
+                - 12
+                - 53
+                - 55
+                - 105
+            "3":
+                - 1
+                - 2
+                - 3
+                - 13
+                - 16
+                - 22
+                - 23
+                - 35
+                - 55
+                - 61
+            "4": 3.11.5
+            "5": 0.19.11
+            "8":
+                - 5
+            "12": 0.19.11
+            "13": darwin-arm64
+action_noise:
+    value: None
+action_space:
+    value: MultiDiscrete([2 2 2 2])
+algo:
+    value: PPO
+algorithm:
+    value: ppo
+algorithm_params:
+    value:
+        gamma: 0.99
+        learning_rate: 0.0003
+        n_envs: 4
+batch_size:
+    value: 64
+clip_range:
+    value: <function get_schedule_fn.<locals>.<lambda> at 0x36511e660>
+clip_range_vf:
+    value: None
+device:
+    value: cpu
+ent_coef:
+    value: 0.01
+env:
+    value: <stable_baselines3.common.vec_env.vec_normalize.VecNormalize object at 0x320107990>
+ep_info_buffer:
+    value: deque([], maxlen=100)
+ep_success_buffer:
+    value: deque([], maxlen=100)
+final_model_path:
+    value: results/ppo_20250524_021239/logs/models/ppo_final_model
+gae_lambda:
+    value: 0.95
+gamma:
+    value: 0.99
+learning_rate:
+    value: 0.0003
+lr_schedule:
+    value: <function get_schedule_fn.<locals>.<lambda> at 0x3200ab380>
+max_grad_norm:
+    value: 0.5
+model_architecture:
+    value:
+        activation_fn: torch.nn.modules.activation.ReLU
+        net_arch:
+            - 256
+            - 256
+n_envs:
+    value: 4
+n_epochs:
+    value: 10
+n_steps:
+    value: 512
+normalize_advantage:
+    value: "True"
+normalized:
+    value: true
+num_timesteps:
+    value: 0
+observation_space:
+    value: |-
+        Box([-10. -10. -30.   0.   0.   0.   0.  10.  10.   0.   0.], [5.00e+01 5.00e+01 5.00e+01 1.00e+00 1.00e+00 1.00e+00 1.00e+00 3.50e+01
+         3.50e+01 2.30e+01 2.88e+03], (11,), float32)
+policy:
+    value: |-
+        ActorCriticPolicy(
+          (features_extractor): FlattenExtractor(
+            (flatten): Flatten(start_dim=1, end_dim=-1)
+          )
+          (pi_features_extractor): FlattenExtractor(
+            (flatten): Flatten(start_dim=1, end_dim=-1)
+          )
+          (vf_features_extractor): FlattenExtractor(
+            (flatten): Flatten(start_dim=1, end_dim=-1)
+          )
+          (mlp_extractor): MlpExtractor(
+            (policy_net): Sequential(
+              (0): Linear(in_features=11, out_features=256, bias=True)
+              (1): ReLU()
+              (2): Linear(in_features=256, out_features=256, bias=True)
+              (3): ReLU()
+            )
+            (value_net): Sequential(
+              (0): Linear(in_features=11, out_features=256, bias=True)
+              (1): ReLU()
+              (2): Linear(in_features=256, out_features=256, bias=True)
+              (3): ReLU()
+            )
+          )
+          (action_net): Linear(in_features=256, out_features=8, bias=True)
+          (value_net): Linear(in_features=256, out_features=1, bias=True)
+        )
+policy_class:
+    value: <class 'stable_baselines3.common.policies.ActorCriticPolicy'>
+policy_kwargs:
+    value: '{''net_arch'': [256, 256], ''activation_fn'': <class ''torch.nn.modules.activation.ReLU''>}'
+rollout_buffer:
+    value: <stable_baselines3.common.buffers.RolloutBuffer object at 0x31f480410>
+rollout_buffer_class:
+    value: <class 'stable_baselines3.common.buffers.RolloutBuffer'>
+rollout_buffer_kwargs:
+    value: '{}'
+sde_sample_freq:
+    value: -1
+seed:
+    value: 0
+start_time:
+    value: 1748049180338950000
+target_kl:
+    value: None
+tensorboard_log:
+    value: results/ppo_20250524_021239/logs
+timesteps_per_second:
+    value: 905.4467693396532
+total_timesteps:
+    value: 5000000
+training_time_seconds:
+    value: 5522.135777950287
+use_sde:
+    value: "False"
+verbose:
+    value: 1
+vf_coef:
+    value: 0.5

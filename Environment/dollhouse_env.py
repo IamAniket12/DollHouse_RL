@@ -1,5 +1,5 @@
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
@@ -11,7 +11,7 @@ import os
 
 class DollhouseThermalEnv(gym.Env):
     """
-    A Gym environment for the dollhouse thermal control problem using a pre-trained SINDy model.
+    A Gymnasium environment for the dollhouse thermal control problem using a pre-trained SINDy model.
 
     The environment simulates a two-floor dollhouse with:
     - Controllable lights (ON/OFF) on each floor
@@ -22,7 +22,7 @@ class DollhouseThermalEnv(gym.Env):
     The goal is to maintain temperatures within desired setpoints for both floors.
     """
 
-    metadata = {"render.modes": ["human", "rgb_array"]}
+    metadata = {"render_modes": ["human", "rgb_array"]}  # Fixed for gymnasium
 
     def __init__(
         self,
@@ -39,12 +39,13 @@ class DollhouseThermalEnv(gym.Env):
         comfort_weight: float = 1.0,
         random_seed: Optional[int] = None,
         setpoint_pattern: str = "fixed",
+        render_mode: Optional[str] = None,
     ):
-        super(DollhouseThermalEnv, self).__init__()
+        super().__init__()
 
-        # Set random seed if provided
-        if random_seed is not None:
-            np.random.seed(random_seed)
+        # Validate render mode
+        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        self.render_mode = render_mode
 
         # Store parameters
         self.episode_length = episode_length
@@ -77,9 +78,6 @@ class DollhouseThermalEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # Initialize state variables
-        self.reset()
-
         # For rendering
         self.fig = None
         self.ax = None
@@ -87,172 +85,115 @@ class DollhouseThermalEnv(gym.Env):
         # Store temperature and action history for all episodes
         self.episode_history = []
 
-        # Create lag variables for temperature history (needed for SINDy features)
-        self.ground_temp_history = [
-            self.initial_ground_temp,
-            self.initial_ground_temp,
-            self.initial_ground_temp,
-        ]
-        self.top_temp_history = [
-            self.initial_top_temp,
-            self.initial_top_temp,
-            self.initial_top_temp,
-        ]
-        self.external_temp_history = [
-            self.external_temperatures[0],
-            self.external_temperatures[0],
-            self.external_temperatures[0],
-        ]
+        # Initialize RNG
+        self.np_random = None
+        self._rng = np.random.default_rng(random_seed)
+
+        # Will be initialized in reset()
+        self.current_step = 0
+        self.ground_temp = None
+        self.top_temp = None
+        self.external_temperatures = None
+        self.heating_setpoint = None
+        self.cooling_setpoint = None
+        self.current_action = None
+        self.ground_temp_history = None
+        self.top_temp_history = None
+        self.external_temp_history = None
+        self.history = None
 
     def _generate_external_temperature(self) -> np.ndarray:
         """
         Generate external temperature pattern for the entire episode.
-
-        Different patterns can be chosen:
-        - sine: sinusoidal pattern with one full cycle per day
-        - real_data: simulated pattern based on real data
-        - random_walk: random walk with boundaries and time-of-day tendency
-        - fixed: constant temperature with some noise
-
-        Args:
-            None
-
-        Returns:
-            temperatures: A NumPy array of length episode_length with the
-                external temperatures for each time step.
         """
         time_steps = self.episode_length
 
         if self.external_temp_pattern == "sine":
             # Sinusoidal pattern: cooler at night, warmer during the day
-            # One full cycle per day
             time = np.linspace(0, 2 * np.pi, time_steps)
-            base_temp = 20.0  # Base temperature
-            amplitude = 4.0  # Amplitude of the sine wave
+            base_temp = 20.0
+            amplitude = 4.0
 
-            # Generate temperatures with a sine wave plus some noise
+            # Use self.np_random for gymnasium compatibility
             temperatures = (
                 base_temp
                 + amplitude * np.sin(time - np.pi / 2)
-                + np.random.normal(0, 0.5, time_steps)
+                + self.np_random.normal(0, 0.5, time_steps)
             )
 
         elif self.external_temp_pattern == "real_data":
-            # In a real implementation, you could load actual temperature data
-            # For now, we'll simulate with a more complex pattern
             temperatures = []
             base_temp = 15.0
 
             for i in range(time_steps):
-                hour = int((time_step * self.time_step_seconds / 3600) % 24)
+                hour = int((i * self.time_step_seconds / 3600) % 24)
 
-                # Daily cycle with morning and evening variations
-                if hour < 6:  # Night (midnight to 6am)
+                if hour < 6:  # Night
                     temp = base_temp - 5.0 + hour * 0.3
-                elif hour < 12:  # Morning (6am to noon)
+                elif hour < 12:  # Morning
                     temp = base_temp - 3.0 + (hour - 6) * 1.5
-                elif hour < 18:  # Afternoon (noon to 6pm)
+                elif hour < 18:  # Afternoon
                     temp = base_temp + 7.0 - (hour - 12) * 0.5
-                else:  # Evening (6pm to midnight)
+                else:  # Evening
                     temp = base_temp + 4.0 - (hour - 18) * 1.5
 
-                # Add some noise
-                temp += np.random.normal(0, 1.0)
+                temp += self.np_random.normal(0, 1.0)
                 temperatures.append(temp)
 
             temperatures = np.array(temperatures)
 
         elif self.external_temp_pattern == "random_walk":
-            # Random walk with boundaries
             temperatures = np.zeros(time_steps)
-            temperatures[0] = 15.0  # Start at 15°C
+            temperatures[0] = 15.0
 
             for i in range(1, time_steps):
-                # Random step with momentum
-                step = np.random.normal(0, 1.0)
-                # Add time-of-day tendency
-                hour = (i * self.time_step_seconds / 60) % 24
-                if 9 <= hour < 18:  # Daytime tendency to warm up
+                step = self.np_random.normal(0, 1.0)
+                hour = (i * self.time_step_seconds / 3600) % 24
+                if 9 <= hour < 18:
                     step += 0.1
-                else:  # Nighttime tendency to cool down
+                else:
                     step -= 0.1
 
                 temperatures[i] = temperatures[i - 1] + step
-
-                # Enforce reasonable boundaries
                 temperatures[i] = max(min(temperatures[i], 35.0), -5.0)
 
-        elif self.external_temp_pattern == "fixed":
-            # Default to constant temperature with some noise
+        else:  # fixed
             base_temp = 20.0
-            # temperatures = base_temp
-            temperatures = base_temp + np.random.normal(0, 0.3, time_steps)
+            temperatures = base_temp + self.np_random.normal(0, 0.3, time_steps)
 
         return temperatures
 
     def _update_setpoints(self, time_step: int) -> Tuple[float, float]:
-        """
-        Update heating and cooling setpoints based on the chosen pattern.
-
-        The setpoint pattern can be one of the following:
-        - fixed: fixed setpoints throughout the day
-        - schedule: scheduled setpoints based on time of day
-        - adaptive: adaptive setpoints that respond to external temperature
-
-        Args:
-            time_step: The current time step in the episode
-
-        Returns:
-            Tuple[float, float]: The updated heating and cooling setpoints
-        """
-
-        # Calculate current hour of the day
+        """Update heating and cooling setpoints based on the chosen pattern."""
         hour = int((time_step * self.time_step_seconds / 3600) % 24)
 
         if self.setpoint_pattern == "fixed":
-            # Fixed setpoints throughout the day
             return self.heating_setpoint, self.cooling_setpoint
 
         elif self.setpoint_pattern == "schedule":
-            # Scheduled setpoints based on time of day
-            if 11 <= hour < 18:  # Daytime (8am to 6pm)
-                return 22.0, 24.0  # Narrower comfort band during day
+            if 11 <= hour < 18:  # Daytime
+                return 22.0, 24.0
             elif 8 <= hour < 11:
                 return 26.0, 28.0
             else:  # Night time
-                return 20.0, 24.0  # Wider comfort band at night
+                return 20.0, 24.0
 
         elif self.setpoint_pattern == "adaptive":
-            # Adaptive setpoints that respond to external temperature
             ext_temp = self.external_temperatures[time_step]
-
-            # Adjust heating setpoint down and cooling setpoint up when external temp is extreme
             if ext_temp < 5:
-                return 19.0, 24.0  # Energy-saving during very cold weather
+                return 19.0, 24.0
             elif ext_temp > 25:
-                return 21.0, 26.0  # Energy-saving during very hot weather
+                return 21.0, 26.0
             else:
-                return 20.0, 25.0  # Normal setpoints
+                return 20.0, 25.0
 
-        else:  # Default to fixed
+        else:
             return self.heating_setpoint, self.cooling_setpoint
 
     def _prepare_sindy_features(
         self, state: np.ndarray, action: np.ndarray
     ) -> np.ndarray:
-        """
-        Prepare the input features for the SINDy model.
-
-        The SINDy model expects specific features including the physics-informed ones.
-
-        Args:
-            state: Current state of the environment [ground_temp, top_temp, external_temp]
-            action: Current action [ground_light, ground_window, top_light, top_window]
-
-        Returns:
-            np.ndarray: Prepared features for the SINDy model, reshaped to fit model input
-        """
-        # Extract values from state and action
+        """Prepare the input features for the SINDy model."""
         ground_temp = state[0]
         top_temp = state[1]
         external_temp = state[2]
@@ -261,20 +202,17 @@ class DollhouseThermalEnv(gym.Env):
         top_light = action[2]
         top_window = action[3]
 
-        # Time difference in seconds
         time_diff_seconds = self.time_step_seconds
 
-        # Create physics-informed features
-        # Temperature differences (heat transfer drivers)
+        # Physics-informed features
         floor_temp_diff = top_temp - ground_temp
         ground_ext_temp_diff = ground_temp - external_temp
         top_ext_temp_diff = top_temp - external_temp
 
-        # Window effects (accelerated heat transfer when open)
         ground_window_ext_effect = ground_window * ground_ext_temp_diff
         top_window_ext_effect = top_window * top_ext_temp_diff
 
-        # Lag features for thermal inertia (using history)
+        # Lag features
         ground_temp_lag1 = self.ground_temp_history[-1]
         top_temp_lag1 = self.top_temp_history[-1]
         ext_temp_lag1 = self.external_temp_history[-1]
@@ -283,7 +221,7 @@ class DollhouseThermalEnv(gym.Env):
         top_temp_lag2 = self.top_temp_history[-2]
         ext_temp_lag2 = self.external_temp_history[-2]
 
-        # Temperature rate of change (based on history)
+        # Temperature rate of change
         if len(self.ground_temp_history) >= 2:
             ground_temp_rate = (ground_temp - ground_temp_lag1) / time_diff_seconds
             top_temp_rate = (top_temp - top_temp_lag1) / time_diff_seconds
@@ -291,7 +229,6 @@ class DollhouseThermalEnv(gym.Env):
             ground_temp_rate = 0.0
             top_temp_rate = 0.0
 
-        # Assemble all features - match the exact order used during SINDy training
         u = np.array(
             [
                 ground_light,
@@ -316,68 +253,88 @@ class DollhouseThermalEnv(gym.Env):
             ]
         )
 
-        # Reshape for the SINDy model
         return u.reshape(1, -1)
 
     def _calculate_reward(
         self, ground_temp: float, top_temp: float, action: np.ndarray
     ) -> float:
         """
-        Calculate reward based on how well temperatures are maintained within setpoint range.
-
-        Args:
-            ground_temp: Current ground floor temperature
-            top_temp: Current top floor temperature
-            action: Current action (not directly used in simplified reward)
-
-        Returns:
-            float: The calculated reward
+        Calculate reward based on temperature comfort and energy usage.
         """
-        # Calculate temperature deviations from the comfortable range
-        ground_deviation = 0
-        top_deviation = 0
+        # Ground floor comfort
+        if self.heating_setpoint <= ground_temp <= self.cooling_setpoint:
+            ground_comfort_score = 1.0
+        else:
+            if ground_temp < self.heating_setpoint:
+                deviation = self.heating_setpoint - ground_temp
+            else:
+                deviation = ground_temp - self.cooling_setpoint
 
-        # For ground floor: Check if temperature is outside the comfortable range
-        if ground_temp < self.heating_setpoint:
-            ground_deviation = self.heating_setpoint - ground_temp
-        elif ground_temp > self.cooling_setpoint:
-            ground_deviation = ground_temp - self.cooling_setpoint
+            decay_rate = 0.2
+            ground_comfort_score = np.exp(-decay_rate * deviation)
 
-        # For top floor: Check if temperature is outside the comfortable range
-        if top_temp < self.heating_setpoint:
-            top_deviation = self.heating_setpoint - top_temp
-        elif top_temp > self.cooling_setpoint:
-            top_deviation = top_temp - self.cooling_setpoint
+        # Top floor comfort
+        if self.heating_setpoint <= top_temp <= self.cooling_setpoint:
+            top_comfort_score = 1.0
+        else:
+            if top_temp < self.heating_setpoint:
+                deviation = self.heating_setpoint - top_temp
+            else:
+                deviation = top_temp - self.cooling_setpoint
 
-        # Calculate total deviation (penalize being outside the comfort range)
-        total_deviation = ground_deviation + top_deviation
+            decay_rate = 0.2
+            top_comfort_score = np.exp(-decay_rate * deviation)
 
-        # Small penalty for energy use to discourage unnecessary actions
-        # This is optional and can be removed if you want to focus only on temperature
-        # energy_penalty = 0.1 * sum(action)
-        energy_penalty = 0.0
-        # Final reward: higher when temperatures are in range, lower when they deviate
-        reward = 1.0 - total_deviation - energy_penalty
+        # Combined comfort score
+        comfort_score = (ground_comfort_score + top_comfort_score) / 2.0
+
+        # Energy usage (lights)
+        lights_on = action[0] + action[2]
+        energy_usage = lights_on / 2.0
+
+        # Final reward calculation
+        reward = (self.comfort_weight * comfort_score) - (
+            self.energy_weight * energy_usage
+        )
+
+        # Bonus for perfect comfort
+        if (
+            self.heating_setpoint <= ground_temp <= self.cooling_setpoint
+            and self.heating_setpoint <= top_temp <= self.cooling_setpoint
+        ):
+            reward += 0.1
+
+        # Penalty for extreme actions
+        windows_open = action[1] + action[3]
+        if lights_on == 2 and windows_open == 2:
+            reward -= 0.05
+
+        # Minimum reward
+        min_reward = -0.5
+        reward = max(reward, min_reward)
 
         return reward
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
         """Reset the environment to initial state."""
-        # Reset time step counter
-        self.current_step = 0
+        # Set up RNG
+        super().reset(seed=seed)
+        if seed is not None:
+            self._rng = np.random.default_rng(seed)
 
-        # Set initial temperatures
+        # Reset state
+        self.current_step = 0
         self.ground_temp = self.initial_ground_temp
         self.top_temp = self.initial_top_temp
 
-        # Generate external temperature pattern for the episode
+        # Generate external temperatures
         self.external_temperatures = self._generate_external_temperature()
 
         # Set initial setpoints
         self.heating_setpoint = self.initial_heating_setpoint
         self.cooling_setpoint = self.initial_cooling_setpoint
 
-        # Init action to all OFF/CLOSED
+        # Init action
         self.current_action = np.zeros(4)
 
         # Reset temperature history
@@ -397,7 +354,7 @@ class DollhouseThermalEnv(gym.Env):
             self.external_temperatures[0],
         ]
 
-        # Track history for plotting
+        # Track history
         self.history = {
             "ground_temp": [self.ground_temp],
             "top_temp": [self.top_temp],
@@ -411,12 +368,10 @@ class DollhouseThermalEnv(gym.Env):
             "reward": [0],
         }
 
-        # Calculate hour of day (0-23)
-        # For instance, when calculating hour_of_day:
+        # Calculate hour of day
         hour_of_day = (self.current_step * self.time_step_seconds / 3600) % 24
 
-        # Return the initial observation
-        return np.array(
+        observation = np.array(
             [
                 self.ground_temp,
                 self.top_temp,
@@ -433,22 +388,17 @@ class DollhouseThermalEnv(gym.Env):
             dtype=np.float32,
         )
 
+        info = {}
+
+        return observation, info
+
     def step(self, action):
-        """
-        Take a step in the environment given the action.
-
-        Args:
-            action: [ground_light, ground_window, top_light, top_window]
-                   Each value is 0 (OFF/CLOSED) or 1 (ON/OPEN)
-
-        Returns:
-            observation: The new state
-            reward: The reward for the action
-            done: Whether the episode is done
-            info: Additional information
-        """
-        # Store action for reference
+        """Take a step in the environment."""
+        # Store action
         self.current_action = action
+
+        # Remove debug print to avoid cluttering output during training
+        # print(f"Action taken: {action}")
 
         # Get current state
         current_state = np.array([self.ground_temp, self.top_temp])
@@ -460,13 +410,13 @@ class DollhouseThermalEnv(gym.Env):
             self.external_temperatures[min(self.current_step, self.episode_length - 1)]
         )
 
-        # Keep only the latest 3 entries (current + 2 lags)
+        # Keep only latest 3 entries
         if len(self.ground_temp_history) > 3:
             self.ground_temp_history.pop(0)
             self.top_temp_history.pop(0)
             self.external_temp_history.pop(0)
 
-        # Prepare input features for SINDy model
+        # Prepare features for SINDy
         u_features = self._prepare_sindy_features(
             state=np.array(
                 [
@@ -478,8 +428,7 @@ class DollhouseThermalEnv(gym.Env):
             action=action,
         )
 
-        # Predict next state with SINDy model
-
+        # Predict next state
         next_state = self.sindy_model.predict(
             current_state.reshape(1, -1), u=u_features
         )[0]
@@ -487,7 +436,7 @@ class DollhouseThermalEnv(gym.Env):
         # Update temperatures
         self.ground_temp, self.top_temp = next_state
 
-        # Update setpoints based on time
+        # Update setpoints
         self.heating_setpoint, self.cooling_setpoint = self._update_setpoints(
             self.current_step
         )
@@ -498,14 +447,14 @@ class DollhouseThermalEnv(gym.Env):
         # Update step counter
         self.current_step += 1
 
-        # Check if episode is done
-        done = self.current_step >= self.episode_length
+        # Check termination
+        terminated = False  # Episode doesn't end due to failure
+        truncated = self.current_step >= self.episode_length  # Time limit reached
 
-        # Calculate hour of day (0-23)
-        # For instance, when calculating hour_of_day:
+        # Calculate hour of day
         hour_of_day = (self.current_step * self.time_step_seconds / 3600) % 24
 
-        # Prepare the observation
+        # Prepare observation
         obs = np.array(
             [
                 self.ground_temp,
@@ -539,8 +488,8 @@ class DollhouseThermalEnv(gym.Env):
         self.history["top_window"].append(action[3])
         self.history["reward"].append(reward)
 
-        # Store episode history if episode is done
-        if done:
+        # Store episode history if done
+        if truncated:
             self.episode_history.append(self.history)
 
         # Additional info
@@ -557,25 +506,23 @@ class DollhouseThermalEnv(gym.Env):
             "energy_use": action[0] + action[2],  # lights
         }
 
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
-    def seed(self, seed=None):
-        """Set the seed for this environment's random number generator."""
-        self.np_random, seed = gym.utils.seeding.np_random(seed)
-        np.random.seed(seed)
-        return [seed]
+    def render(self):
+        """Render the environment state."""
+        if self.render_mode == "rgb_array":
+            return self._render_frame()
+        elif self.render_mode == "human":
+            self._render_frame()
+            return None
 
-    def render(self, mode="human"):
-        """
-        Render the environment state.
-
-        Args:
-            mode: 'human' for displaying plots, 'rgb_array' for returning an image
-        """
+    def _render_frame(self):
+        """Internal method to render a frame."""
         if self.fig is None or self.ax is None:
             # Create figure and axes
             self.fig, self.ax = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
-            plt.ion()  # Interactive mode
+            if self.render_mode == "human":
+                plt.ion()  # Interactive mode
 
         # Clear previous plots
         for a in self.ax:
@@ -638,12 +585,14 @@ class DollhouseThermalEnv(gym.Env):
         # Adjust layout
         plt.tight_layout()
 
-        # Draw plot
-        self.fig.canvas.draw()
-        plt.pause(0.1)
-
-        # Return rgb array if needed
-        if mode == "rgb_array":
+        if self.render_mode == "human":
+            # Draw plot
+            self.fig.canvas.draw()
+            plt.pause(0.1)
+            return None
+        else:  # rgb_array
+            # Return rgb array
+            self.fig.canvas.draw()
             return np.transpose(
                 np.array(self.fig.canvas.renderer.buffer_rgba()), (2, 0, 1)
             )
@@ -652,17 +601,12 @@ class DollhouseThermalEnv(gym.Env):
         """Clean up resources."""
         if self.fig is not None:
             plt.close(self.fig)
-            plt.ioff()  # Turn off interactive mode
+            plt.ioff()
             self.fig = None
             self.ax = None
 
     def get_performance_summary(self):
-        """
-        Return a summary of the environment's performance.
-
-        Returns:
-            dict: Performance metrics across all episodes
-        """
+        """Return a summary of the environment's performance."""
         if not self.episode_history:
             return {"error": "No episodes completed yet"}
 
@@ -694,7 +638,6 @@ class DollhouseThermalEnv(gym.Env):
             total_rewards.append(np.sum(episode["reward"]))
 
             # Energy (light hours)
-            # When calculating energy metrics in hours:
             light_hours.append(
                 (
                     np.sum(np.array(episode["ground_light"]))
@@ -717,13 +660,7 @@ class DollhouseThermalEnv(gym.Env):
         }
 
     def save_results(self, filepath, controller_name="Unknown"):
-        """
-        Save episode results to a JSON file.
-
-        Args:
-            filepath: Path to save the results
-            controller_name: Name of the controller for reference
-        """
+        """Save episode results to a JSON file."""
         results = {
             "controller_name": controller_name,
             "num_episodes": len(self.episode_history),

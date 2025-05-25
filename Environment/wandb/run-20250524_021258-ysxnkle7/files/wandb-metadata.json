@@ -1,0 +1,54 @@
+{
+  "os": "macOS-15.3.2-arm64-arm-64bit",
+  "python": "CPython 3.11.5",
+  "startedAt": "2025-05-24T01:12:58.560631Z",
+  "args": [
+    "--data",
+    "../Data/dollhouse-data-2025-03-24.csv",
+    "--algorithm",
+    "ppo",
+    "--timesteps",
+    "5000000",
+    "--n-envs",
+    "4"
+  ],
+  "program": "/Users/aniketdixit/Desktop/DollHouse/DollHouse_RL/Environment/train_rl_agent.py",
+  "codePath": "Environment/train_rl_agent.py",
+  "git": {
+    "remote": "https://github.com/IamAniket12/DollHouse_RL.git",
+    "commit": "e3e36163b6f70cef444a8bce9f61ba47a26abb5a"
+  },
+  "email": "dixitaniket1212@gmail.com",
+  "root": "/Users/aniketdixit/Desktop/DollHouse/DollHouse_RL/Environment",
+  "host": "Anikets-MacBook-Air.local",
+  "executable": "/Users/aniketdixit/anaconda3/bin/python",
+  "codePathLocal": "train_rl_agent.py",
+  "cpu_count": 8,
+  "cpu_count_logical": 8,
+  "disk": {
+    "/": {
+      "total": "494384795648",
+      "used": "480830377984"
+    },
+    "/System/Volumes/Data": {
+      "total": "494384795648",
+      "used": "480830377984"
+    }
+  },
+  "memory": {
+    "total": "8589934592"
+  },
+  "cpu": {
+    "count": 8,
+    "countLogical": 8
+  },
+  "apple": {
+    "name": "Apple M1",
+    "ecpuCores": 4,
+    "pcpuCores": 4,
+    "gpuCores": 8,
+    "memoryGb": 8,
+    "swapTotalBytes": "4294967296",
+    "ramTotalBytes": "8589934592"
+  }
+}

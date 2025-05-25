@@ -101,11 +101,13 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
     episode_external_temps = []
     episode_actions = []
     episode_rewards = []
-    episode_setpoints = []  # NEW: Track setpoints over time
+    episode_setpoints = []
 
     for episode in range(num_episodes):
-        obs = env.reset()
-        done = False
+        # Reset returns (obs, info) tuple in gymnasium
+        obs, info = env.reset()
+        terminated = False
+        truncated = False
         episode_reward = 0
         steps = 0
 
@@ -117,17 +119,17 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
         ext_temps = []
         actions = []
         rewards = []
-        setpoints = []  # NEW: Track heating and cooling setpoints
+        setpoints = []
 
-        while not done:
-            # NEW: Extract and store current setpoints from observation
+        while not terminated and not truncated:
+            # Extract and store current setpoints from observation
             if len(obs) > 8:  # Check if setpoints are in observation
                 heating_sp = obs[7]
                 cooling_sp = obs[8]
             else:
                 # Fallback to environment attributes
-                heating_sp = getattr(orig_env, "heating_setpoint", 20.0)
-                cooling_sp = getattr(orig_env, "cooling_setpoint", 24.0)
+                heating_sp = orig_env.initial_heating_setpoint
+                cooling_sp = orig_env.initial_cooling_setpoint
 
             setpoints.append([heating_sp, cooling_sp])
 
@@ -144,8 +146,8 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
             actions_taken["top_light_on"] += action[2]
             actions_taken["top_window_open"] += action[3]
 
-            # Take the action
-            obs, reward, done, info = env.step(action)
+            # Take the action - now returns 5 values
+            obs, reward, terminated, truncated, info = env.step(action)
             episode_reward += reward
             steps += 1
 
@@ -172,7 +174,7 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
         episode_external_temps.append(ext_temps)
         episode_actions.append(actions)
         episode_rewards.append(rewards)
-        episode_setpoints.append(setpoints)  # NEW: Store setpoints for this episode
+        episode_setpoints.append(setpoints)
 
         avg_actions = {k: v / steps for k, v in actions_taken.items()}
 
@@ -206,10 +208,10 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
             "actions": episode_actions,
             "rewards": episode_rewards,
             "total_rewards": total_rewards,
-            "setpoints": episode_setpoints,  # NEW: Include setpoint data
+            "setpoints": episode_setpoints,
         }
 
-        # MODIFIED: Handle dynamic setpoints properly
+        # Handle dynamic setpoints properly
         if episode_setpoints and len(episode_setpoints[0]) > 0:
             # Use the first setpoint as fallback for static displays
             performance["heating_setpoint"] = episode_setpoints[0][0][0]
@@ -217,17 +219,13 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
             performance["has_dynamic_setpoints"] = True
         else:
             # Fallback to environment attributes
-            performance["heating_setpoint"] = getattr(
-                orig_env, "heating_setpoint", 20.0
-            )
-            performance["cooling_setpoint"] = getattr(
-                orig_env, "cooling_setpoint", 24.0
-            )
+            performance["heating_setpoint"] = orig_env.initial_heating_setpoint
+            performance["cooling_setpoint"] = orig_env.initial_cooling_setpoint
             performance["has_dynamic_setpoints"] = False
 
-        performance["reward_type"] = getattr(orig_env, "reward_type", "unknown")
-        performance["energy_weight"] = getattr(orig_env, "energy_weight", 1.0)
-        performance["comfort_weight"] = getattr(orig_env, "comfort_weight", 1.0)
+        performance["reward_type"] = orig_env.reward_type
+        performance["energy_weight"] = orig_env.energy_weight
+        performance["comfort_weight"] = orig_env.comfort_weight
 
         # Save results
         output_dir = "rule_based_results"
@@ -271,7 +269,7 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
                         ],
                         "total_rewards": [float(r) for r in value["total_rewards"]],
                         "setpoints": (
-                            [  # NEW: Save setpoint data
+                            [
                                 [[float(sp) for sp in setpoint] for setpoint in episode]
                                 for episode in value.get("setpoints", [])
                             ]
@@ -330,7 +328,7 @@ def visualize_performance(
     has_dynamic_setpoints = len(episode_setpoints) > 0 and len(episode_setpoints[0]) > 0
 
     # Plot temperatures, actions, setpoints, and rewards for the first episode
-    plt.figure(figsize=(15, 16))  # Increased height for additional subplot
+    plt.figure(figsize=(15, 16))
 
     # Temperature plot with dynamic setpoints
     plt.subplot(5, 1, 1)
@@ -367,7 +365,7 @@ def visualize_performance(
     plt.legend()
     plt.grid(True, alpha=0.3)
 
-    # NEW: Separate setpoint plot for better visibility (only if dynamic)
+    # Separate setpoint plot for better visibility (only if dynamic)
     if has_dynamic_setpoints:
         plt.subplot(5, 1, 2)
         heating_setpoints = [sp[0] for sp in episode_setpoints[0]]
@@ -652,27 +650,24 @@ def run_rule_based_evaluation(
         # Create environment with default parameters
         env_params = {
             "sindy_model": sindy_model,
-            "episode_length": 1000,  # 24 hours with 30-second timesteps
+            "episode_length": 2880,  # 24 hours with 30-second timesteps
             "time_step_seconds": 30,
             "heating_setpoint": 26.0,
             "cooling_setpoint": 28.0,
-            "external_temp_pattern": "sine",
-            "setpoint_pattern": "fixed",
+            "external_temp_pattern": "fixed",
+            "setpoint_pattern": "schedule",
             "reward_type": "balanced",
-            "energy_weight": 0.5,
+            "energy_weight": 0.0,
             "comfort_weight": 1.0,
         }
 
         env = DollhouseThermalEnv(**env_params)
 
-    # ADDED: Print environment setpoint configuration
+    # Print environment setpoint configuration
     print(f"\nEnvironment Configuration:")
-    if hasattr(env, "setpoint_pattern"):
-        print(f"Setpoint Pattern: {env.setpoint_pattern}")
-    if hasattr(env, "heating_setpoint"):
-        print(f"Base Heating Setpoint: {env.heating_setpoint}")
-    if hasattr(env, "cooling_setpoint"):
-        print(f"Base Cooling Setpoint: {env.cooling_setpoint}")
+    print(f"Setpoint Pattern: {env.setpoint_pattern}")
+    print(f"Base Heating Setpoint: {env.initial_heating_setpoint}")
+    print(f"Base Cooling Setpoint: {env.initial_cooling_setpoint}")
 
     # Save environment parameters
     with open(os.path.join(output_dir, "env_params.json"), "w") as f:
@@ -703,7 +698,7 @@ def run_rule_based_evaluation(
         plt.plot(time_hours, env.history["top_temp"], "r-", label="Top Floor")
         plt.plot(time_hours, env.history["external_temp"], "g-", label="External")
 
-        # MODIFIED: Handle dynamic setpoints in history plot
+        # Handle dynamic setpoints in history plot
         if "heating_setpoint" in env.history and "cooling_setpoint" in env.history:
             # Dynamic setpoints available in history
             plt.plot(
@@ -720,8 +715,8 @@ def run_rule_based_evaluation(
             )
         else:
             # Static setpoints
-            heating_sp = getattr(env, "heating_setpoint", 20.0)
-            cooling_sp = getattr(env, "cooling_setpoint", 24.0)
+            heating_sp = env.initial_heating_setpoint
+            cooling_sp = env.initial_cooling_setpoint
             plt.axhline(
                 y=heating_sp,
                 color="k",
@@ -815,4 +810,4 @@ if __name__ == "__main__":
     )
 
 # Example usage:
-# python rule_based_controller.py --data "../Data/dollhouse-data-2025-03-24.csv" --episodes 10 --env-params "results/ppo_20250513_151705/env_params.json" --no-render
+# python rule_based_controller.py --data "../Data/dollhouse-data-2025-03-24.csv" --episodes 10 --env-params "results/ppo_20250513_151705/env_params

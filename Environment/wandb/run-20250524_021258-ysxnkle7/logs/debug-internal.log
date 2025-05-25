@@ -1,0 +1,18 @@
+{"time":"2025-05-24T02:12:58.564505+01:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/Users/aniketdixit/Desktop/DollHouse/DollHouse_RL/Environment/wandb/run-20250524_021258-ysxnkle7/logs/debug-core.log"}
+{"time":"2025-05-24T02:12:58.83048+01:00","level":"INFO","msg":"created new stream","id":"ysxnkle7"}
+{"time":"2025-05-24T02:12:58.830627+01:00","level":"INFO","msg":"stream: started","id":"ysxnkle7"}
+{"time":"2025-05-24T02:12:58.830814+01:00","level":"INFO","msg":"writer: Do: started","stream_id":"ysxnkle7"}
+{"time":"2025-05-24T02:12:58.830862+01:00","level":"INFO","msg":"handler: started","stream_id":"ysxnkle7"}
+{"time":"2025-05-24T02:12:58.830985+01:00","level":"INFO","msg":"sender: started","stream_id":"ysxnkle7"}
+{"time":"2025-05-24T02:12:59.110958+01:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-05-24T02:13:10.355881+01:00","level":"INFO","msg":"tensorboard: no root directory after 10 seconds, using working directory"}
+{"time":"2025-05-24T03:00:44.83708+01:00","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/dixitaniket1212-coventry-university/dollhouse-thermal-control/ysxnkle7/file_stream\": read tcp 172.16.23.243:49319->35.186.228.49:443: read: connection reset by peer"}
+{"time":"2025-05-24T03:45:02.501729+01:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-05-24T03:45:02.502022+01:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-05-24T03:45:03.545879+01:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading model.zip","runtime_seconds":0.734641792,"progress":"1.2MB/1.6MB"},{"desc":"uploading results/ppo_20250524_021239/logs/models/ppo_final_model.zip","runtime_seconds":0.734635542,"progress":"1.5MB/1.6MB"},{"desc":"uploading output.log","runtime_seconds":0.7346225,"progress":"1.4MB/3.2MB"},{"desc":"uploading results/ppo_20250524_021239/logs/models/vec_normalize.pkl","runtime_seconds":0.228923959,"progress":"2.2KB/2.2KB"},{"desc":"uploading results/ppo_20250524_021239/logs/PPO_1/events.out.tfevents.1748049180.Anikets-MacBook-Air.local.8866.0","runtime_seconds":0.228912583,"progress":"656.0KB/1.6MB"}],"total_operations":5}}
+{"time":"2025-05-24T03:45:04.833863+01:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-05-24T03:45:05.42737+01:00","level":"INFO","msg":"stream: closing","id":"ysxnkle7"}
+{"time":"2025-05-24T03:45:05.427406+01:00","level":"INFO","msg":"handler: closed","stream_id":"ysxnkle7"}
+{"time":"2025-05-24T03:45:05.427426+01:00","level":"INFO","msg":"sender: closed","stream_id":"ysxnkle7"}
+{"time":"2025-05-24T03:45:05.427421+01:00","level":"INFO","msg":"writer: Close: closed","stream_id":"ysxnkle7"}
+{"time":"2025-05-24T03:45:05.427664+01:00","level":"INFO","msg":"stream: closed","id":"ysxnkle7"}

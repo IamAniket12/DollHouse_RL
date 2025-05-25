@@ -9,6 +9,7 @@ from datetime import datetime
 # Import Stable Baselines
 from stable_baselines3 import PPO, A2C, DQN, SAC
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 # Import our modules
 from train_sindy_model import train_sindy_model
@@ -41,16 +42,17 @@ def load_model(model_path):
     return model
 
 
-def recreate_environment(env_params_path, data_file=None):
+def recreate_environment(env_params_path, data_file=None, model_dir=None):
     """
-    Recreate the environment using saved parameters.
+    Recreate the environment using saved parameters, with normalization if available.
 
     Args:
         env_params_path: Path to the saved environment parameters
         data_file: Optional path to data file for SINDy model (overrides saved path)
+        model_dir: Directory where the model is saved (to look for normalization stats)
 
     Returns:
-        env: Recreated environment
+        env: Recreated environment (possibly normalized)
     """
     # Load environment parameters
     with open(env_params_path, "r") as f:
@@ -70,97 +72,182 @@ def recreate_environment(env_params_path, data_file=None):
             raise ValueError("No data file provided or found in environment parameters")
 
     # Replace SINDy model placeholder with actual model
-    env_params["sindy_model"] = sindy_model
+    env_params_copy = env_params.copy()
+    env_params_copy["sindy_model"] = sindy_model
+
+    # Remove parameters that aren't for the environment constructor
+    env_params_copy.pop("n_envs", None)
+    env_params_copy.pop("vec_env_type", None)
+    env_params_copy.pop("normalized", None)
 
     # Create environment with saved parameters
-    env = DollhouseThermalEnv(**env_params)
+    env = DollhouseThermalEnv(**env_params_copy)
+
+    # Check if normalization was used during training
+    normalized = env_params.get("normalized", False)
+
+    if normalized and model_dir:
+        # Look for normalization statistics
+        vec_normalize_path = os.path.join(model_dir, "vec_normalize.pkl")
+        if os.path.exists(vec_normalize_path):
+            print(f"Found normalization statistics at {vec_normalize_path}")
+            # Wrap environment in DummyVecEnv first
+            env = DummyVecEnv([lambda: env])
+            # Load and apply normalization
+            env = VecNormalize.load(vec_normalize_path, env)
+            # Set to evaluation mode (don't update statistics)
+            env.training = False
+            env.norm_reward = False  # Don't normalize rewards during evaluation
+            print("Applied normalization wrapper for evaluation")
+        else:
+            print(
+                f"Warning: Training used normalization but vec_normalize.pkl not found at {vec_normalize_path}"
+            )
+            print("Proceeding without normalization - results may be suboptimal")
+    elif normalized:
+        print("Warning: Training used normalization but model_dir not provided")
+        print("Proceeding without normalization - results may be suboptimal")
 
     return env
 
 
-def evaluate_agent(
-    env, model, num_episodes=5, deterministic=False, render=False, verbose=True
-):
+def evaluate_agent(env, model, num_episodes=5, render=False, verbose=True):
     """
-    Evaluate a trained agent on the environment.
+    Evaluate a trained agent on the environment using deterministic actions.
+
+    Handles both normalized and non-normalized environments.
 
     Args:
-        env: The environment to evaluate on
+        env: The environment to evaluate on (may be VecNormalize wrapped)
         model: The trained RL model
         num_episodes: Number of episodes to evaluate
-        deterministic: Whether to use deterministic actions
         render: Whether to render the environment
         verbose: Whether to print detailed logs
 
     Returns:
         dict: Evaluation results
     """
+    # Check if environment is normalized
+    is_vec_env = isinstance(env, (DummyVecEnv, VecNormalize))
+
+    # Get the base environment for accessing attributes
+    if isinstance(env, VecNormalize):
+        base_env = env.venv.envs[0]
+    elif isinstance(env, DummyVecEnv):
+        base_env = env.envs[0]
+    else:
+        base_env = env
+
     total_rewards = []
     episode_temperatures = []
     episode_actions = []
     episode_rewards = []
     episode_external_temps = []
-    episode_setpoints = []  # NEW: Track setpoints over time
+    episode_setpoints = []
 
     for episode in range(num_episodes):
-        obs = env.reset()
-        done = False
+        # Reset environment
+        if is_vec_env:
+            obs = env.reset()
+            # For vec environments, obs is shape (1, obs_dim)
+            obs = obs[0] if len(obs.shape) > 1 else obs
+        else:
+            obs, info = env.reset()
+
+        terminated = False
+        truncated = False
         episode_reward = 0
 
-        # Track temperatures, actions, and setpoints for this episode
+        # Track data for this episode
         temps = []
         actions = []
         rewards = []
         ext_temps = []
-        setpoints = []  # NEW: Track heating and cooling setpoints
+        setpoints = []
 
-        while not done:
-            # ADDED: Get current setpoints before taking action
-            if hasattr(env, "get_setpoints"):
-                heating_sp, cooling_sp = env.get_setpoints()
-            else:
-                # Fallback: access setpoints directly
-                heating_sp = getattr(env, "heating_setpoint", 20.0)
-                cooling_sp = getattr(env, "cooling_setpoint", 24.0)
-
+        while not terminated and not truncated:
+            # Get current setpoints from base environment
+            heating_sp = base_env.heating_setpoint
+            cooling_sp = base_env.cooling_setpoint
             setpoints.append([heating_sp, cooling_sp])
 
-            # Select action using model
-            action, _ = model.predict(obs, deterministic=deterministic)
+            # Get original observation for logging (before normalization)
+            if isinstance(env, VecNormalize):
+                # Get unnormalized observation for display
+                original_obs = (
+                    env.get_original_obs()[0]
+                    if hasattr(env, "get_original_obs")
+                    else obs
+                )
+            else:
+                original_obs = obs
 
-            if verbose:
+            # Select action using model
+            if is_vec_env:
+                # For vectorized environments, we need to add batch dimension
+                action, _ = model.predict(obs.reshape(1, -1), deterministic=True)
+                action = action[0]  # Remove batch dimension
+            else:
+                action, _ = model.predict(obs, deterministic=True)
+
+            if verbose and len(temps) % 100 == 0:
+                # Use original observation for display
+                display_obs = original_obs if isinstance(env, VecNormalize) else obs
                 print(
-                    f"Action: {action}, Setpoints: {heating_sp:.1f}°C / {cooling_sp:.1f}°C"
+                    f"Step {len(temps)}: Action: {action}, "
+                    f"Temps: {display_obs[0]:.1f}/{display_obs[1]:.1f}°C, "
+                    f"Setpoints: {heating_sp:.1f}/{cooling_sp:.1f}°C"
                 )
 
             # Take action in environment
-            obs, reward, done, info = env.step(action)
+            if is_vec_env:
+                obs, reward, done, info = env.step([action])
+                obs = obs[0]
+                reward = reward[0]
+                done = done[0]
+                info = info[0] if isinstance(info, list) else info
+
+                # VecEnv uses 'done' instead of terminated/truncated
+                terminated = done
+                truncated = False
+            else:
+                obs, reward, terminated, truncated, info = env.step(action)
 
             episode_reward += reward
 
-            # Record data for analysis
-            temps.append([obs[0], obs[1]])  # ground_temp, top_temp
-            ext_temps.append(obs[2])  # external_temp
+            # Record data - use original observation values
+            if isinstance(env, VecNormalize):
+                # Get unnormalized observation for recording
+                original_obs = (
+                    env.get_original_obs()[0]
+                    if hasattr(env, "get_original_obs")
+                    else obs
+                )
+            else:
+                original_obs = obs
+
+            temps.append([original_obs[0], original_obs[1]])
+            ext_temps.append(original_obs[2])
             actions.append(action)
             rewards.append(reward)
 
-            if render:
-                env.render()
+            if render and not is_vec_env:
+                base_env.render()
 
         total_rewards.append(episode_reward)
         episode_temperatures.append(temps)
         episode_external_temps.append(ext_temps)
         episode_actions.append(actions)
         episode_rewards.append(rewards)
-        episode_setpoints.append(setpoints)  # NEW: Store setpoints for this episode
+        episode_setpoints.append(setpoints)
 
         if verbose:
             print(
                 f"Episode {episode+1}/{num_episodes}: Total Reward = {episode_reward:.2f}"
             )
 
-    # Get performance summary
-    performance = env.get_performance_summary()
+    # Get performance summary from base environment
+    performance = base_env.get_performance_summary()
 
     if verbose:
         print("\nAgent Evaluation Summary:")
@@ -169,32 +256,30 @@ def evaluate_agent(
         print(f"Top Floor Comfort %: {performance['avg_top_comfort_pct']:.2f}%")
         print(f"Average Light Hours: {performance['avg_light_hours']:.2f}")
 
-    # Add raw episode data to performance dict for detailed analysis
+    # Add raw episode data to performance dict
     performance["episode_data"] = {
         "temperatures": episode_temperatures,
         "external_temps": episode_external_temps,
         "actions": episode_actions,
         "rewards": episode_rewards,
         "total_rewards": total_rewards,
-        "setpoints": episode_setpoints,  # NEW: Include setpoint data
+        "setpoints": episode_setpoints,
     }
 
-    # MODIFIED: Don't just use static setpoints
-    # Check if we have dynamic setpoints
+    # Set setpoint information
     if episode_setpoints and len(episode_setpoints[0]) > 0:
-        # Use the first setpoint as fallback for static displays
         performance["heating_setpoint"] = episode_setpoints[0][0][0]
         performance["cooling_setpoint"] = episode_setpoints[0][0][1]
         performance["has_dynamic_setpoints"] = True
     else:
-        # Fallback to environment attributes
-        performance["heating_setpoint"] = getattr(env, "heating_setpoint", 20.0)
-        performance["cooling_setpoint"] = getattr(env, "cooling_setpoint", 24.0)
+        performance["heating_setpoint"] = base_env.initial_heating_setpoint
+        performance["cooling_setpoint"] = base_env.initial_cooling_setpoint
         performance["has_dynamic_setpoints"] = False
 
-    performance["reward_type"] = getattr(env, "reward_type", "unknown")
-    performance["energy_weight"] = getattr(env, "energy_weight", 1.0)
-    performance["comfort_weight"] = getattr(env, "comfort_weight", 1.0)
+    performance["reward_type"] = base_env.reward_type
+    performance["energy_weight"] = base_env.energy_weight
+    performance["comfort_weight"] = base_env.comfort_weight
+    performance["was_normalized"] = is_vec_env
 
     return performance
 
@@ -221,23 +306,21 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
     has_dynamic_setpoints = len(episode_setpoints) > 0 and len(episode_setpoints[0]) > 0
 
     # Plot temperatures, actions, setpoints, and rewards for the first episode
-    plt.figure(figsize=(15, 16))  # Increased height for additional subplot
+    plt.figure(figsize=(15, 16))
 
     # Temperature plot with dynamic setpoints
-    plt.subplot(5, 1, 1)  # Changed from 4,1,1 to 5,1,1
+    plt.subplot(5, 1, 1)
     ground_temps = [temp[0] for temp in episode_temperatures[0]]
     top_temps = [temp[1] for temp in episode_temperatures[0]]
     plt.plot(ground_temps, label="Ground Floor Temperature", linewidth=2)
     plt.plot(top_temps, label="Top Floor Temperature", linewidth=2)
 
     if has_dynamic_setpoints:
-        # Plot dynamic setpoints
         heating_setpoints = [sp[0] for sp in episode_setpoints[0]]
         cooling_setpoints = [sp[1] for sp in episode_setpoints[0]]
         plt.plot(heating_setpoints, "r--", label="Heating Setpoint", linewidth=1.5)
         plt.plot(cooling_setpoints, "b--", label="Cooling Setpoint", linewidth=1.5)
     else:
-        # Plot static setpoints
         heating_setpoint = performance.get("heating_setpoint", 20.0)
         cooling_setpoint = performance.get("cooling_setpoint", 24.0)
         plt.axhline(
@@ -253,12 +336,16 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
             label=f"Cooling Setpoint ({cooling_setpoint}°C)",
         )
 
-    plt.title(f"{agent_name} - Temperatures (Episode 1)")
+    # Add normalization indicator to title
+    normalization_status = (
+        " (Normalized)" if performance.get("was_normalized", False) else ""
+    )
+    plt.title(f"{agent_name} - Temperatures (Episode 1){normalization_status}")
     plt.ylabel("Temperature (°C)")
     plt.legend()
     plt.grid(True, alpha=0.3)
 
-    # NEW: Separate setpoint plot for better visibility (only if dynamic)
+    # Separate setpoint plot for better visibility (only if dynamic)
     if has_dynamic_setpoints:
         plt.subplot(5, 1, 2)
         heating_setpoints = [sp[0] for sp in episode_setpoints[0]]
@@ -367,7 +454,7 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
         bbox_inches="tight",
     )
 
-    # Create temperature distribution plot with dynamic setpoint ranges
+    # Create temperature distribution plot
     plt.figure(figsize=(14, 6))
 
     # Combine all temperature data across episodes
@@ -393,7 +480,6 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
     plt.hist(all_ground_temps, bins=30, alpha=0.7, edgecolor="black")
 
     if has_dynamic_setpoints and all_heating_setpoints:
-        # Show setpoint ranges
         min_heating = min(all_heating_setpoints)
         max_heating = max(all_heating_setpoints)
         min_cooling = min(all_cooling_setpoints)
@@ -494,7 +580,6 @@ def main(
     data_file,
     env_params_path=None,
     num_episodes=5,
-    deterministic=False,
     render=False,
     output_dir=None,
     verbose=True,
@@ -507,7 +592,6 @@ def main(
         data_file: Path to data file for training SINDy model
         env_params_path: Path to the saved environment parameters
         num_episodes: Number of episodes to evaluate
-        deterministic: Whether to use deterministic actions
         render: Whether to render the environment
         output_dir: Directory to save results
         verbose: Whether to print detailed logs
@@ -519,45 +603,56 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
+    # Get model directory
+    model_dir = os.path.dirname(model_path)
+
     # Find env_params_path if not provided
     if env_params_path is None:
         # Try to find it in the same directory as the model
-        model_dir = os.path.dirname(model_path)
-        potential_path = os.path.join(model_dir, "env_params.json")
+        potential_path = os.path.join(model_dir, "..", "..", "env_params.json")
         if os.path.exists(potential_path):
             env_params_path = potential_path
             print(f"Found environment parameters at {env_params_path}")
         else:
-            raise ValueError(
-                "env_params_path not provided and not found in model directory"
-            )
+            # Try alternative path structure
+            potential_path = os.path.join(model_dir, "..", "env_params.json")
+            if os.path.exists(potential_path):
+                env_params_path = potential_path
+                print(f"Found environment parameters at {env_params_path}")
+            else:
+                raise ValueError(
+                    "env_params_path not provided and not found in model directory"
+                )
 
     # Load model
     model = load_model(model_path)
 
-    # Recreate environment
-    env = recreate_environment(env_params_path, data_file)
+    # Recreate environment (with normalization if applicable)
+    env = recreate_environment(env_params_path, data_file, model_dir)
 
-    # ADDED: Print environment setpoint configuration
+    # Get base environment for printing info
+    if isinstance(env, VecNormalize):
+        base_env = env.venv.envs[0]
+    elif isinstance(env, DummyVecEnv):
+        base_env = env.envs[0]
+    else:
+        base_env = env
+
+    # Print environment setpoint configuration
     print(f"\nEnvironment Configuration:")
-    if hasattr(env, "setpoint_pattern"):
-        print(f"Setpoint Pattern: {env.setpoint_pattern}")
-    if hasattr(env, "heating_setpoint"):
-        print(f"Base Heating Setpoint: {env.heating_setpoint}")
-    if hasattr(env, "cooling_setpoint"):
-        print(f"Base Cooling Setpoint: {env.cooling_setpoint}")
+    print(f"Setpoint Pattern: {base_env.setpoint_pattern}")
+    print(f"Base Heating Setpoint: {base_env.initial_heating_setpoint}")
+    print(f"Base Cooling Setpoint: {base_env.initial_cooling_setpoint}")
+    if isinstance(env, VecNormalize):
+        print("Using normalized environment for evaluation")
 
     # Evaluate agent
-    print(
-        f"\nEvaluating agent {'deterministically' if deterministic else 'stochastically'} for {num_episodes} episodes..."
-    )
+    print(f"\nEvaluating agent deterministically for {num_episodes} episodes...")
 
-    stochastic_mode = "deterministic" if deterministic else "stochastic"
     performance = evaluate_agent(
         env=env,
         model=model,
         num_episodes=num_episodes,
-        deterministic=deterministic,
         render=render,
         verbose=verbose,
     )
@@ -570,9 +665,7 @@ def main(
             break
 
     # Save performance results
-    results_path = os.path.join(
-        output_dir, f"{algorithm}_{stochastic_mode}_results.json"
-    )
+    results_path = os.path.join(output_dir, f"{algorithm}_deterministic_results.json")
     # Convert numpy arrays to lists for JSON serialization
     with open(results_path, "w") as f:
         serializable_perf = {}
@@ -595,7 +688,7 @@ def main(
                     ],
                     "total_rewards": [float(r) for r in value["total_rewards"]],
                     "setpoints": (
-                        [  # NEW: Save setpoint data
+                        [
                             [[float(sp) for sp in setpoint] for setpoint in episode]
                             for episode in value.get("setpoints", [])
                         ]
@@ -613,15 +706,13 @@ def main(
         json.dump(serializable_perf, f, indent=4)
 
     # Save environment results
-    env.save_results(
-        os.path.join(output_dir, f"{algorithm}_{stochastic_mode}_env_results.json"),
-        controller_name=f"{algorithm} Agent ({stochastic_mode})",
+    base_env.save_results(
+        os.path.join(output_dir, f"{algorithm}_deterministic_env_results.json"),
+        controller_name=f"{algorithm} Agent (deterministic)",
     )
 
     # Visualize performance
-    visualize_performance(
-        performance, output_dir, agent_name=f"{algorithm} Agent ({stochastic_mode})"
-    )
+    visualize_performance(performance, output_dir, agent_name=f"{algorithm} Agent")
 
     print(f"\nEvaluation completed. Results saved to {output_dir}")
 
@@ -655,12 +746,6 @@ if __name__ == "__main__":
         "--episodes", type=int, default=5, help="Number of episodes to evaluate"
     )
     parser.add_argument(
-        "--deterministic", action="store_true", help="Use deterministic actions"
-    )
-    parser.add_argument(
-        "--stochastic", action="store_true", help="Use stochastic actions (default)"
-    )
-    parser.add_argument(
         "--render", action="store_true", help="Render the environment during evaluation"
     )
     parser.add_argument(
@@ -670,28 +755,25 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Handle deterministic vs stochastic (prioritize explicit flags)
-    deterministic = False
-    if args.deterministic:
-        deterministic = True
-    if args.stochastic:
-        deterministic = False
-
     main(
         model_path=args.model,
         data_file=args.data,
         env_params_path=args.env_params,
         num_episodes=args.episodes,
-        deterministic=deterministic,
         render=args.render,
         output_dir=args.output,
         verbose=not args.quiet,
     )
 
 # Example usage:
+# For normalized model:
 # python evaluate_rl_agent.py \
-#   --model "results/ppo_20250513_151705/logs/models/ppo_final_model" \
+#   --model "results/ppo_20250523_normalized/logs/models/ppo_final_model" \
 #   --data "../Data/dollhouse-data-2025-03-24.csv" \
-#   --env-params "results/ppo_20250513_151705/env_params.json" \
-#   --stochastic \
-#   --episodes 1
+#   --episodes 5
+
+# For non-normalized model:
+# python evaluate_rl_agent.py \
+#   --model "results/ppo_20250523_regular/logs/models/ppo_final_model" \
+#   --data "../Data/dollhouse-data-2025-03-24.csv" \
+#   --episodes 5

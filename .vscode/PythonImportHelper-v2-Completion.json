@@ -1,19 +1,19 @@
 [
     {
-        "label": "gym",
+        "label": "gymnasium",
         "kind": 6,
         "isExtraImport": true,
-        "importPath": "gym",
-        "description": "gym",
-        "detail": "gym",
+        "importPath": "gymnasium",
+        "description": "gymnasium",
+        "detail": "gymnasium",
         "documentation": {}
     },
     {
         "label": "spaces",
-        "importPath": "gym",
-        "description": "gym",
+        "importPath": "gymnasium",
+        "description": "gymnasium",
         "isExtraImport": true,
-        "detail": "gym",
+        "detail": "gymnasium",
         "documentation": {}
     },
     {
@@ -172,6 +172,14 @@
     },
     {
         "label": "timedelta",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "datetime",
         "importPath": "datetime",
         "description": "datetime",
         "isExtraImport": true,
@@ -1136,6 +1144,14 @@
         "documentation": {}
     },
     {
+        "label": "PPO",
+        "importPath": "stable_baselines3",
+        "description": "stable_baselines3",
+        "isExtraImport": true,
+        "detail": "stable_baselines3",
+        "documentation": {}
+    },
+    {
         "label": "evaluate_policy",
         "importPath": "stable_baselines3.common.evaluation",
         "description": "stable_baselines3.common.evaluation",
@@ -1144,6 +1160,46 @@
         "documentation": {}
     },
     {
+        "label": "DummyVecEnv",
+        "importPath": "stable_baselines3.common.vec_env",
+        "description": "stable_baselines3.common.vec_env",
+        "isExtraImport": true,
+        "detail": "stable_baselines3.common.vec_env",
+        "documentation": {}
+    },
+    {
+        "label": "VecNormalize",
+        "importPath": "stable_baselines3.common.vec_env",
+        "description": "stable_baselines3.common.vec_env",
+        "isExtraImport": true,
+        "detail": "stable_baselines3.common.vec_env",
+        "documentation": {}
+    },
+    {
+        "label": "DummyVecEnv",
+        "importPath": "stable_baselines3.common.vec_env",
+        "description": "stable_baselines3.common.vec_env",
+        "isExtraImport": true,
+        "detail": "stable_baselines3.common.vec_env",
+        "documentation": {}
+    },
+    {
+        "label": "SubprocVecEnv",
+        "importPath": "stable_baselines3.common.vec_env",
+        "description": "stable_baselines3.common.vec_env",
+        "isExtraImport": true,
+        "detail": "stable_baselines3.common.vec_env",
+        "documentation": {}
+    },
+    {
+        "label": "VecNormalize",
+        "importPath": "stable_baselines3.common.vec_env",
+        "description": "stable_baselines3.common.vec_env",
+        "isExtraImport": true,
+        "detail": "stable_baselines3.common.vec_env",
+        "documentation": {}
+    },
+    {
         "label": "train_sindy_model",
         "importPath": "train_sindy_model",
         "description": "train_sindy_model",
@@ -1189,6 +1245,15 @@
         "description": "dollhouse_env",
         "isExtraImport": true,
         "detail": "dollhouse_env",
+        "documentation": {}
+    },
+    {
+        "label": "torch",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "torch",
+        "description": "torch",
+        "detail": "torch",
         "documentation": {}
     },
     {
@@ -1197,6 +1262,47 @@
         "description": "stable_baselines3.common.callbacks",
         "isExtraImport": true,
         "detail": "stable_baselines3.common.callbacks",
+        "documentation": {}
+    },
+    {
+        "label": "BaseCallback",
+        "importPath": "stable_baselines3.common.callbacks",
+        "description": "stable_baselines3.common.callbacks",
+        "isExtraImport": true,
+        "detail": "stable_baselines3.common.callbacks",
+        "documentation": {}
+    },
+    {
+        "label": "Monitor",
+        "importPath": "stable_baselines3.common.monitor",
+        "description": "stable_baselines3.common.monitor",
+        "isExtraImport": true,
+        "detail": "stable_baselines3.common.monitor",
+        "documentation": {}
+    },
+    {
+        "label": "make_vec_env",
+        "importPath": "stable_baselines3.common.env_util",
+        "description": "stable_baselines3.common.env_util",
+        "isExtraImport": true,
+        "detail": "stable_baselines3.common.env_util",
+        "documentation": {}
+    },
+    {
+        "label": "wandb",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "wandb",
+        "description": "wandb",
+        "detail": "wandb",
+        "documentation": {}
+    },
+    {
+        "label": "WandbCallback",
+        "importPath": "wandb.integration.sb3",
+        "description": "wandb.integration.sb3",
+        "isExtraImport": true,
+        "detail": "wandb.integration.sb3",
         "documentation": {}
     },
     {
@@ -2024,6 +2130,22 @@
         "importPath": "seaborn",
         "description": "seaborn",
         "detail": "seaborn",
+        "documentation": {}
+    },
+    {
+        "label": "ListedColormap",
+        "importPath": "matplotlib.colors",
+        "description": "matplotlib.colors",
+        "isExtraImport": true,
+        "detail": "matplotlib.colors",
+        "documentation": {}
+    },
+    {
+        "label": "Patch",
+        "importPath": "matplotlib.patches",
+        "description": "matplotlib.patches",
+        "isExtraImport": true,
+        "detail": "matplotlib.patches",
         "documentation": {}
     },
     {
@@ -5475,7 +5597,7 @@
         "kind": 6,
         "importPath": "Environment.dollhouse_env",
         "description": "Environment.dollhouse_env",
-        "peekOfCode": "class DollhouseThermalEnv(gym.Env):\n    \"\"\"\n    A Gym environment for the dollhouse thermal control problem using a pre-trained SINDy model.\n    The environment simulates a two-floor dollhouse with:\n    - Controllable lights (ON/OFF) on each floor\n    - Controllable windows (OPEN/CLOSED) on each floor\n    - Temperature states for ground floor and top floor\n    - External temperature (time-varying)\n    The goal is to maintain temperatures within desired setpoints for both floors.\n    \"\"\"",
+        "peekOfCode": "class DollhouseThermalEnv(gym.Env):\n    \"\"\"\n    A Gymnasium environment for the dollhouse thermal control problem using a pre-trained SINDy model.\n    The environment simulates a two-floor dollhouse with:\n    - Controllable lights (ON/OFF) on each floor\n    - Controllable windows (OPEN/CLOSED) on each floor\n    - Temperature states for ground floor and top floor\n    - External temperature (time-varying)\n    The goal is to maintain temperatures within desired setpoints for both floors.\n    \"\"\"",
         "detail": "Environment.dollhouse_env",
         "documentation": {}
     },
@@ -5493,7 +5615,7 @@
         "kind": 2,
         "importPath": "Environment.evaluate_rl_agent",
         "description": "Environment.evaluate_rl_agent",
-        "peekOfCode": "def recreate_environment(env_params_path, data_file=None):\n    \"\"\"\n    Recreate the environment using saved parameters.\n    Args:\n        env_params_path: Path to the saved environment parameters\n        data_file: Optional path to data file for SINDy model (overrides saved path)\n    Returns:\n        env: Recreated environment\n    \"\"\"\n    # Load environment parameters",
+        "peekOfCode": "def recreate_environment(env_params_path, data_file=None, model_dir=None):\n    \"\"\"\n    Recreate the environment using saved parameters, with normalization if available.\n    Args:\n        env_params_path: Path to the saved environment parameters\n        data_file: Optional path to data file for SINDy model (overrides saved path)\n        model_dir: Directory where the model is saved (to look for normalization stats)\n    Returns:\n        env: Recreated environment (possibly normalized)\n    \"\"\"",
         "detail": "Environment.evaluate_rl_agent",
         "documentation": {}
     },
@@ -5502,7 +5624,7 @@
         "kind": 2,
         "importPath": "Environment.evaluate_rl_agent",
         "description": "Environment.evaluate_rl_agent",
-        "peekOfCode": "def evaluate_agent(\n    env, model, num_episodes=5, deterministic=False, render=False, verbose=True\n):\n    \"\"\"\n    Evaluate a trained agent on the environment.\n    Args:\n        env: The environment to evaluate on\n        model: The trained RL model\n        num_episodes: Number of episodes to evaluate\n        deterministic: Whether to use deterministic actions",
+        "peekOfCode": "def evaluate_agent(env, model, num_episodes=5, render=False, verbose=True):\n    \"\"\"\n    Evaluate a trained agent on the environment using deterministic actions.\n    Handles both normalized and non-normalized environments.\n    Args:\n        env: The environment to evaluate on (may be VecNormalize wrapped)\n        model: The trained RL model\n        num_episodes: Number of episodes to evaluate\n        render: Whether to render the environment\n        verbose: Whether to print detailed logs",
         "detail": "Environment.evaluate_rl_agent",
         "documentation": {}
     },
@@ -5520,7 +5642,7 @@
         "kind": 2,
         "importPath": "Environment.evaluate_rl_agent",
         "description": "Environment.evaluate_rl_agent",
-        "peekOfCode": "def main(\n    model_path,\n    data_file,\n    env_params_path=None,\n    num_episodes=5,\n    deterministic=False,\n    render=False,\n    output_dir=None,\n    verbose=True,\n):",
+        "peekOfCode": "def main(\n    model_path,\n    data_file,\n    env_params_path=None,\n    num_episodes=5,\n    render=False,\n    output_dir=None,\n    verbose=True,\n):\n    \"\"\"",
         "detail": "Environment.evaluate_rl_agent",
         "documentation": {}
     },
@@ -5561,11 +5683,47 @@
         "documentation": {}
     },
     {
+        "label": "CustomWandbCallback",
+        "kind": 6,
+        "importPath": "Environment.train_rl_agent",
+        "description": "Environment.train_rl_agent",
+        "peekOfCode": "class CustomWandbCallback(BaseCallback):\n    \"\"\"\n    Custom callback for logging additional metrics to WandB.\n    \"\"\"\n    def __init__(self, verbose=0):\n        super(CustomWandbCallback, self).__init__(verbose)\n        self.episode_rewards = []\n        self.episode_lengths = []\n        self.episode_comfort_violations = []\n    def _on_step(self) -> bool:",
+        "detail": "Environment.train_rl_agent",
+        "documentation": {}
+    },
+    {
+        "label": "check_gpu_availability",
+        "kind": 2,
+        "importPath": "Environment.train_rl_agent",
+        "description": "Environment.train_rl_agent",
+        "peekOfCode": "def check_gpu_availability():\n    \"\"\"\n    Check if GPU is available and return the appropriate device.\n    \"\"\"\n    if torch.cuda.is_available():\n        device = torch.device(\"cuda\")\n        print(f\"GPU available! Using {torch.cuda.get_device_name(0)}\")\n        print(\n            f\"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB\"\n        )",
+        "detail": "Environment.train_rl_agent",
+        "documentation": {}
+    },
+    {
+        "label": "make_env",
+        "kind": 2,
+        "importPath": "Environment.train_rl_agent",
+        "description": "Environment.train_rl_agent",
+        "peekOfCode": "def make_env(rank, seed, sindy_model, env_params, monitor_dir):\n    \"\"\"\n    Create a function that returns a single environment instance.\n    Args:\n        rank: Unique identifier for the environment\n        seed: Random seed\n        sindy_model: Trained SINDy model\n        env_params: Environment parameters\n        monitor_dir: Directory for monitor logs\n    Returns:",
+        "detail": "Environment.train_rl_agent",
+        "documentation": {}
+    },
+    {
+        "label": "create_vectorized_env",
+        "kind": 2,
+        "importPath": "Environment.train_rl_agent",
+        "description": "Environment.train_rl_agent",
+        "peekOfCode": "def create_vectorized_env(\n    sindy_model,\n    env_params,\n    n_envs,\n    seed,\n    monitor_dir,\n    vec_env_type=\"subproc\",\n    normalize=True,\n):\n    \"\"\"",
+        "detail": "Environment.train_rl_agent",
+        "documentation": {}
+    },
+    {
         "label": "train_rl_agent",
         "kind": 2,
         "importPath": "Environment.train_rl_agent",
         "description": "Environment.train_rl_agent",
-        "peekOfCode": "def train_rl_agent(\n    env, algorithm=\"ppo\", total_timesteps=5000000, seed=0, log_dir=\"logs\"\n):\n    \"\"\"\n    Train an RL agent on the dollhouse environment.\n    Args:\n        env: The environment to train on\n        algorithm: Algorithm to use ('ppo', 'a2c', 'dqn', or 'sac')\n        total_timesteps: Total number of timesteps to train for\n        seed: Random seed",
+        "peekOfCode": "def train_rl_agent(\n    vec_env,\n    n_envs,\n    algorithm=\"ppo\",\n    total_timesteps=5000000,\n    seed=0,\n    log_dir=\"logs\",\n    wandb_project=\"dollhouse-thermal-control\",\n    wandb_entity=None,\n    use_wandb=True,",
         "detail": "Environment.train_rl_agent",
         "documentation": {}
     },
@@ -5574,7 +5732,7 @@
         "kind": 2,
         "importPath": "Environment.train_rl_agent",
         "description": "Environment.train_rl_agent",
-        "peekOfCode": "def setup_training(\n    data_file,\n    output_dir=None,\n    algorithm=\"ppo\",\n    total_timesteps=5000000,\n    reward_type=\"balanced\",\n    energy_weight=0.5,\n    comfort_weight=1.0,\n    seed=0,\n):",
+        "peekOfCode": "def setup_training(\n    data_file,\n    output_dir=None,\n    algorithm=\"ppo\",\n    total_timesteps=5000000,\n    reward_type=\"balanced\",\n    energy_weight=0.0,\n    comfort_weight=1.0,\n    seed=0,\n    wandb_project=\"dollhouse-thermal-control\",",
         "detail": "Environment.train_rl_agent",
         "documentation": {}
     },
@@ -5765,6 +5923,60 @@
         "description": "Test.policy_comparison",
         "peekOfCode": "def main():\n    parser = argparse.ArgumentParser(description=\"Record and visualize policy actions.\")\n    parser.add_argument(\n        \"--model\", type=str, required=True, help=\"Path to the trained PPO model\"\n    )\n    parser.add_argument(\n        \"--output\", type=str, default=None, help=\"Directory to save results\"\n    )\n    parser.add_argument(\n        \"--format\",",
         "detail": "Test.policy_comparison",
+        "documentation": {}
+    },
+    {
+        "label": "create_rule_based_controller",
+        "kind": 2,
+        "importPath": "Test.temp",
+        "description": "Test.temp",
+        "peekOfCode": "def create_rule_based_controller(heating_setpoint, cooling_setpoint, hysteresis=0.5):\n    \"\"\"\n    Create a simple rule-based controller.\n    Args:\n        heating_setpoint: Heating setpoint temperature\n        cooling_setpoint: Cooling setpoint temperature\n        hysteresis: Temperature buffer to prevent oscillation\n    Returns:\n        function: Rule-based controller function\n    \"\"\"",
+        "detail": "Test.temp",
+        "documentation": {}
+    },
+    {
+        "label": "create_observation",
+        "kind": 2,
+        "importPath": "Test.temp",
+        "description": "Test.temp",
+        "peekOfCode": "def create_observation(ground_temp, top_temp, current_action=None):\n    \"\"\"\n    Create observation vector matching the training environment format.\n    Observation format:\n    [ground_temp, top_temp, external_temp, ground_light, ground_window, top_light, top_window,\n     heating_setpoint, cooling_setpoint, hour_of_day, time_step]\n    Args:\n        ground_temp: Ground floor temperature\n        top_temp: Top floor temperature\n        current_action: Previous action (if available)",
+        "detail": "Test.temp",
+        "documentation": {}
+    },
+    {
+        "label": "calculate_action_combination",
+        "kind": 2,
+        "importPath": "Test.temp",
+        "description": "Test.temp",
+        "peekOfCode": "def calculate_action_combination(action):\n    \"\"\"\n    Calculate action combination code for a single floor.\n    Args:\n        action: [light_state, window_state]\n    Returns:\n        int: Action combination code (0-3)\n    \"\"\"\n    light, window = action[0], action[1]\n    if light == 0 and window == 0:",
+        "detail": "Test.temp",
+        "documentation": {}
+    },
+    {
+        "label": "generate_policy_grid",
+        "kind": 2,
+        "importPath": "Test.temp",
+        "description": "Test.temp",
+        "peekOfCode": "def generate_policy_grid(controller, temp_range, is_rl_model=False, deterministic=True):\n    \"\"\"\n    Generate a policy grid for a controller across a range of temperatures.\n    Args:\n        controller: Controller function or model\n        temp_range: Range of temperatures to evaluate\n        is_rl_model: Whether the controller is an RL model\n        deterministic: Whether to use deterministic actions (for RL model)\n    Returns:\n        Ground actions grid and Top actions grid (2D arrays of action combinations)",
+        "detail": "Test.temp",
+        "documentation": {}
+    },
+    {
+        "label": "visualize_policies",
+        "kind": 2,
+        "importPath": "Test.temp",
+        "description": "Test.temp",
+        "peekOfCode": "def visualize_policies(\n    rule_based_ground,\n    rule_based_top,\n    ppo_stochastic_ground,\n    ppo_stochastic_top,\n    ppo_deterministic_ground,\n    ppo_deterministic_top,\n    temp_range,\n    output_dir,\n    save_format=\"pdf\",",
+        "detail": "Test.temp",
+        "documentation": {}
+    },
+    {
+        "label": "main",
+        "kind": 2,
+        "importPath": "Test.temp",
+        "description": "Test.temp",
+        "peekOfCode": "def main():\n    \"\"\"\n    Main function to run the policy comparison.\n    \"\"\"\n    parser = argparse.ArgumentParser(\n        description=\"Compare rule-based and PPO controller policies\"\n    )\n    parser.add_argument(\n        \"--model\", type=str, required=True, help=\"Path to the trained PPO model\"\n    )",
+        "detail": "Test.temp",
         "documentation": {}
     },
     {
