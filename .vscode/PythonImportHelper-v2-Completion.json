@@ -5732,7 +5732,7 @@
         "kind": 2,
         "importPath": "Environment.train_rl_agent",
         "description": "Environment.train_rl_agent",
-        "peekOfCode": "def setup_training(\n    data_file,\n    output_dir=None,\n    algorithm=\"ppo\",\n    total_timesteps=5000000,\n    reward_type=\"balanced\",\n    energy_weight=0.0,\n    comfort_weight=1.0,\n    seed=0,\n    wandb_project=\"dollhouse-thermal-control\",",
+        "peekOfCode": "def setup_training(\n    data_file,\n    output_dir=None,\n    algorithm=\"ppo\",\n    total_timesteps=5000000,\n    reward_type=\"balanced\",\n    energy_weight=1.0,\n    comfort_weight=1.0,\n    seed=0,\n    wandb_project=\"dollhouse-thermal-control\",",
         "detail": "Environment.train_rl_agent",
         "documentation": {}
     },

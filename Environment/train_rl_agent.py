@@ -436,7 +436,7 @@ def setup_training(
     algorithm="ppo",
     total_timesteps=5000000,
     reward_type="balanced",
-    energy_weight=0.0,
+    energy_weight=1.0,
     comfort_weight=1.0,
     seed=0,
     wandb_project="dollhouse-thermal-control",
