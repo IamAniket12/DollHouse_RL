@@ -120,7 +120,8 @@ class DollhouseThermalEnv(gym.Env):
                 + amplitude * np.sin(time - np.pi / 2)
                 + self.np_random.normal(0, 0.5, time_steps)
             )
-
+        #cumsum
+        #truncate vs terminate
         elif self.external_temp_pattern == "real_data":
             temperatures = []
             base_temp = 15.0
@@ -328,8 +329,9 @@ class DollhouseThermalEnv(gym.Env):
         self.top_temp = self.initial_top_temp
 
         # Generate external temperatures
+        
         self.external_temperatures = self._generate_external_temperature()
-
+       
         # Set initial setpoints
         self.heating_setpoint = self.initial_heating_setpoint
         self.cooling_setpoint = self.initial_cooling_setpoint

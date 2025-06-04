@@ -3,3 +3,4 @@ pysindy/
 .vscode/Sindy/Training/results/
 Sindy/Training/results/sindy_hyperopt_*/sindy_hyperopt_results.json
 wandb/
+monitor/

@@ -238,10 +238,9 @@ def train_rl_agent(
 
     # Set up callbacks
     callbacks = []
-
     # Checkpoint callback
     checkpoint_callback = CheckpointCallback(
-        save_freq=max(total_timesteps // (10 * n_envs), 1000),  # Adjust for n_envs
+        save_freq=200000,  # Less frequent saves
         save_path=models_dir,
         name_prefix=algorithm,
     )
@@ -251,7 +250,7 @@ def train_rl_agent(
     if use_wandb:
         # Standard WandB callback for SB3
         wandb_callback = WandbCallback(
-            gradient_save_freq=1000,
+            gradient_save_freq=100000,
             model_save_path=f"{models_dir}/wandb",
             verbose=2,
         )
@@ -261,18 +260,12 @@ def train_rl_agent(
         custom_callback = CustomWandbCallback()
         callbacks.append(custom_callback)
 
-    # Create the algorithm with GPU support
-    policy_kwargs = dict(
-        net_arch=[256, 256],  # Larger network for GPU
-        activation_fn=torch.nn.ReLU,
-    )
-
     # Adjust batch sizes and steps for vectorized environments
     if algorithm.lower() == "ppo":
         # PPO works well with vectorized environments
         # n_steps * n_envs should be > batch_size
-        n_steps = 2048 // n_envs  # Keep total batch size constant
-        batch_size = 64
+        n_steps = max(128, 1024 // n_envs)  # Keep total batch size constant
+        batch_size = 128
 
         model = PPO(
             "MlpPolicy",
@@ -283,14 +276,13 @@ def train_rl_agent(
             learning_rate=3e-4,
             n_steps=n_steps,
             batch_size=batch_size,
-            n_epochs=10,
+            n_epochs=4,
             gamma=0.99,
             gae_lambda=0.95,
             clip_range=0.2,
             ent_coef=0.01,
             vf_coef=0.5,
             max_grad_norm=0.5,
-            policy_kwargs=policy_kwargs,
             device=device,
         )
         print(
@@ -314,7 +306,6 @@ def train_rl_agent(
             ent_coef=0.01,
             vf_coef=0.5,
             max_grad_norm=0.5,
-            policy_kwargs=policy_kwargs,
             device=device,
         )
         print(f"A2C configured with n_steps={n_steps} for {n_envs} environments")
@@ -340,7 +331,6 @@ def train_rl_agent(
             exploration_fraction=0.1,
             exploration_initial_eps=1.0,
             exploration_final_eps=0.05,
-            policy_kwargs=policy_kwargs,
             device=device,
         )
 
@@ -363,7 +353,6 @@ def train_rl_agent(
             ent_coef="auto",
             target_update_interval=1,
             target_entropy="auto",
-            policy_kwargs=policy_kwargs,
             device=device,
         )
     else:
@@ -375,7 +364,6 @@ def train_rl_agent(
     if use_wandb:
         wandb.config.update(
             {
-                "model_architecture": policy_kwargs,
                 "algorithm_params": {
                     "learning_rate": model.learning_rate,
                     "gamma": model.gamma,
