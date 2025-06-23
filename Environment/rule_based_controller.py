@@ -62,7 +62,7 @@ def create_rule_based_controller(hysteresis=0.5):
     return controller
 
 
-def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
+def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5, output_dir=None):
     """
     Evaluate a simple rule-based controller on the environment.
 
@@ -71,6 +71,7 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
         num_episodes: Number of episodes to evaluate
         render: Whether to render the environment
         hysteresis: Hysteresis parameter for the rule-based controller
+        output_dir: Directory to save results (if None, uses default)
 
     Returns:
         dict: Evaluation results
@@ -227,13 +228,13 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
         performance["energy_weight"] = orig_env.energy_weight
         performance["comfort_weight"] = orig_env.comfort_weight
 
-        # Save results
-        output_dir = "rule_based_results"
-        os.makedirs(output_dir, exist_ok=True)
+        # Use provided output_dir or default to rule_based_results
+        save_dir = output_dir if output_dir else "rule_based_results"
+        os.makedirs(save_dir, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filepath = os.path.join(
-            output_dir, f"simple_controller_results_{timestamp}.json"
+            save_dir, f"simple_controller_results_{timestamp}.json"
         )
 
         orig_env.save_results(
@@ -244,7 +245,7 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
 
         # Save performance data with episode details
         results_path = os.path.join(
-            output_dir, f"simple_detailed_results_{timestamp}.json"
+            save_dir, f"simple_detailed_results_{timestamp}.json"
         )
         with open(results_path, "w") as f:
             # Convert numpy arrays to lists for JSON serialization
@@ -290,7 +291,7 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5):
         print(f"Detailed results saved to {results_path}")
 
         # Create visualizations
-        visualize_performance(performance, output_dir, "Simple Rule-Based Controller")
+        visualize_performance(performance, save_dir, "Simple Rule-Based Controller")
     else:
         # Simple performance metrics if the environment doesn't provide detailed ones
         performance = {
@@ -613,10 +614,9 @@ def run_rule_based_evaluation(
     Returns:
         dict: Evaluation results
     """
-    # Set output directory
+    # Set output directory - use rule_based_results as default
     if output_dir is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = f"simple_controller_results_{timestamp}"
+        output_dir = "rule_based_results"
 
     os.makedirs(output_dir, exist_ok=True)
     print(f"Results will be saved to {output_dir}")
@@ -650,6 +650,9 @@ def run_rule_based_evaluation(
         # Create environment with default parameters
         env_params = {
             "sindy_model": sindy_model,
+            "use_reward_shaping": True,
+            "random_start_time": False,
+            "shaping_weight": 0.3,
             "episode_length": 2880,  # 24 hours with 30-second timesteps
             "time_step_seconds": 30,
             "heating_setpoint": 26.0,
@@ -668,6 +671,8 @@ def run_rule_based_evaluation(
     print(f"Setpoint Pattern: {env.setpoint_pattern}")
     print(f"Base Heating Setpoint: {env.initial_heating_setpoint}")
     print(f"Base Cooling Setpoint: {env.initial_cooling_setpoint}")
+    print(f"Random Start Time: {env.random_start_time}")
+    print(f"Reward Shaping: {env.use_reward_shaping}")
 
     # Save environment parameters
     with open(os.path.join(output_dir, "env_params.json"), "w") as f:
@@ -680,82 +685,14 @@ def run_rule_based_evaluation(
     print(f"\nEvaluating Simple Rule-Based Controller...")
     start_time = time.time()
     performance = evaluate_rule_based(
-        env=env, num_episodes=num_episodes, render=render, hysteresis=hysteresis
+        env=env, 
+        num_episodes=num_episodes, 
+        render=render, 
+        hysteresis=hysteresis,
+        output_dir=output_dir  # Pass the output_dir to evaluation function
     )
     evaluation_time = time.time() - start_time
     print(f"Evaluation completed in {evaluation_time:.2f} seconds")
-
-    # Plot temperature history if available
-    if hasattr(env, "history") and "ground_temp" in env.history:
-        plt.figure(figsize=(12, 8))
-
-        # Plot temperatures
-        plt.subplot(2, 1, 1)
-        time_steps = range(len(env.history["ground_temp"]))
-        time_hours = [t * env.time_step_seconds / 3600 for t in time_steps]
-
-        plt.plot(time_hours, env.history["ground_temp"], "b-", label="Ground Floor")
-        plt.plot(time_hours, env.history["top_temp"], "r-", label="Top Floor")
-        plt.plot(time_hours, env.history["external_temp"], "g-", label="External")
-
-        # Handle dynamic setpoints in history plot
-        if "heating_setpoint" in env.history and "cooling_setpoint" in env.history:
-            # Dynamic setpoints available in history
-            plt.plot(
-                time_hours,
-                env.history["heating_setpoint"],
-                "k--",
-                label="Heating Setpoint",
-            )
-            plt.plot(
-                time_hours,
-                env.history["cooling_setpoint"],
-                "k-.",
-                label="Cooling Setpoint",
-            )
-        else:
-            # Static setpoints
-            heating_sp = env.initial_heating_setpoint
-            cooling_sp = env.initial_cooling_setpoint
-            plt.axhline(
-                y=heating_sp,
-                color="k",
-                linestyle="--",
-                label=f"Heating Setpoint ({heating_sp}°C)",
-            )
-            plt.axhline(
-                y=cooling_sp,
-                color="k",
-                linestyle="-.",
-                label=f"Cooling Setpoint ({cooling_sp}°C)",
-            )
-
-        plt.ylabel("Temperature (°C)")
-        plt.legend()
-        plt.title(f"Simple Rule-Based Controller Performance")
-        plt.grid(True)
-
-        # Plot actions
-        plt.subplot(2, 1, 2)
-        plt.step(time_hours, env.history["ground_light"], "b-", label="Ground Light")
-        plt.step(time_hours, env.history["ground_window"], "b--", label="Ground Window")
-        plt.step(time_hours, env.history["top_light"], "r-", label="Top Light")
-        plt.step(time_hours, env.history["top_window"], "r--", label="Top Window")
-        plt.xlabel("Time (hours)")
-        plt.ylabel("Control State")
-        plt.yticks([0, 1], ["OFF/CLOSED", "ON/OPEN"])
-        plt.legend()
-        plt.grid(True)
-
-        plt.tight_layout()
-        plt.savefig(
-            os.path.join(output_dir, "simple_controller_performance.png"),
-            dpi=300,
-            bbox_inches="tight",
-        )
-        print(
-            f"Performance plot saved to {os.path.join(output_dir, 'simple_controller_performance.png')}"
-        )
 
     return performance
 
@@ -810,4 +747,4 @@ if __name__ == "__main__":
     )
 
 # Example usage:
-# python rule_based_controller.py --data "../Data/dollhouse-data-2025-03-24.csv" --episodes 10 --env-params "results/ppo_20250513_151705/env_params
+# python rule_based_controller.py --data "../Data/dollhouse-data-2025-03-24.csv" --episodes 10 --env-params "results/ppo_20250513_151705/env_params"
