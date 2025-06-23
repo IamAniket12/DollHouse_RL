@@ -291,7 +291,7 @@ def train_rl_agent(
 
     elif algorithm.lower() == "a2c":
         # A2C also benefits from vectorized environments
-        n_steps = max(5, 20 // n_envs)  # Adjust n_steps
+        n_steps = 256  # Adjust n_steps
 
         model = A2C(
             "MlpPolicy",
