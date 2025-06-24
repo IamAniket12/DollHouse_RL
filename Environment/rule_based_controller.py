@@ -657,7 +657,7 @@ def run_rule_based_evaluation(
             "time_step_seconds": 30,
             "heating_setpoint": 26.0,
             "cooling_setpoint": 28.0,
-            "external_temp_pattern": "fixed",
+            "external_temp_pattern": "sine",
             "setpoint_pattern": "schedule",
             "reward_type": "balanced",
             "energy_weight": 0.0,

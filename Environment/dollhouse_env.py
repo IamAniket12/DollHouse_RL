@@ -225,8 +225,8 @@ class DollhouseThermalEnv(gym.Env):
             if 11 <= actual_hour < 18:  # Daytime
                 return 22.0, 24.0
             elif 8 <= actual_hour < 11:
-                return 20.0, 22.0
-                # return 26.0, 28.0
+                # return 20.0, 22.0
+                return 26.0, 28.0
             else:  # Night time
                 return 20.0, 24.0
 
