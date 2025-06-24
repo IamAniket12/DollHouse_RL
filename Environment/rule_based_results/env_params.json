@@ -3,7 +3,7 @@
     "use_reward_shaping": true,
     "random_start_time": false,
     "shaping_weight": 0.3,
-    "episode_length": 2880,
+    "episode_length": 5760,
     "time_step_seconds": 30,
     "heating_setpoint": 26.0,
     "cooling_setpoint": 28.0,

@@ -653,7 +653,7 @@ def run_rule_based_evaluation(
             "use_reward_shaping": True,
             "random_start_time": False,
             "shaping_weight": 0.3,
-            "episode_length": 2880,  # 24 hours with 30-second timesteps
+            "episode_length": 5760,  # 24 hours with 30-second timesteps 2880
             "time_step_seconds": 30,
             "heating_setpoint": 26.0,
             "cooling_setpoint": 28.0,

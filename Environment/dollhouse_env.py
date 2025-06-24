@@ -151,7 +151,7 @@ class DollhouseThermalEnv(gym.Env):
             total_steps = time_steps + start_offset_steps
             time = np.linspace(0, 2 * np.pi * total_steps / 2880, total_steps)  # 2880 steps = 24 hours
             base_temp = 20.0
-            amplitude = 4.0
+            amplitude = 2.0
 
             all_temperatures = (
                 base_temp
@@ -225,7 +225,8 @@ class DollhouseThermalEnv(gym.Env):
             if 11 <= actual_hour < 18:  # Daytime
                 return 22.0, 24.0
             elif 8 <= actual_hour < 11:
-                return 26.0, 28.0
+                return 20.0, 22.0
+                # return 26.0, 28.0
             else:  # Night time
                 return 20.0, 24.0
 
@@ -237,7 +238,72 @@ class DollhouseThermalEnv(gym.Env):
                 return 21.0, 26.0
             else:
                 return 20.0, 25.0
-
+        elif self.setpoint_pattern == "challenging":
+            """
+            Challenging pattern designed to test RL agents vs rule-based controllers:
+            - Starts with tight control (22-24°C) for initial period
+            - Expands to broader range (20-27°C) to test adaptability
+            - Includes periodic tightening to test responsiveness
+            """
+            # Convert time_step to minutes from episode start
+            minutes_elapsed = (time_step * self.time_step_seconds) / 60
+            
+            # Phase 1: Initial tight control (first 30 minutes)
+            if minutes_elapsed < 30:
+                return 22.0, 24.0
+            
+            # Phase 2: Expanded range (30-90 minutes)
+            elif 30 <= minutes_elapsed < 90:
+                return 20.0, 27.0
+            
+            # Phase 3: Periodic cycling between tight and loose control
+            elif 90 <= minutes_elapsed < 240:  # 90-240 minutes (2.5-4 hours)
+                # 20-minute cycles: 10 min tight, 10 min loose
+                cycle_position = (minutes_elapsed - 90) % 20
+                if cycle_position < 10:
+                    return 22.5, 23.5  # Very tight control
+                else:
+                    return 19.0, 28.0  # Very loose control
+            
+            # Phase 4: Time-of-day dependent with external temperature influence
+            elif 240 <= minutes_elapsed < 480:  # 4-8 hours
+                ext_temp = self.external_temperatures[min(time_step, len(self.external_temperatures) - 1)]
+                
+                # Base setpoints vary by time of day
+                if 6 <= actual_hour < 12:  # Morning
+                    base_heating, base_cooling = 21.0, 25.0
+                elif 12 <= actual_hour < 18:  # Afternoon  
+                    base_heating, base_cooling = 23.0, 26.0
+                elif 18 <= actual_hour < 22:  # Evening
+                    base_heating, base_cooling = 22.0, 24.0
+                else:  # Night
+                    base_heating, base_cooling = 20.0, 26.0
+                
+                # Adjust based on external temperature
+                if ext_temp < 15:
+                    return base_heating - 1.0, base_cooling - 1.0
+                elif ext_temp > 25:
+                    return base_heating + 1.0, base_cooling + 1.0
+                else:
+                    return base_heating, base_cooling
+            
+            # Phase 5: Final challenge - narrow moving window
+            else:  # After 8 hours
+                # Create a "moving comfort zone" that shifts over time
+                minutes_in_phase = minutes_elapsed - 480
+                
+                # Sinusoidal variation with 60-minute period
+                center_temp = 23.5 + 2.0 * np.sin(2 * np.pi * minutes_in_phase / 60)
+                
+                # Narrow 1.5°C window around the moving center
+                heating_sp = center_temp - 0.75
+                cooling_sp = center_temp + 0.75
+                
+                # Clamp to reasonable bounds
+                heating_sp = max(18.0, min(heating_sp, 26.0))
+                cooling_sp = max(20.0, min(cooling_sp, 30.0))
+                
+                return heating_sp, cooling_sp
         else:
             return self.heating_setpoint, self.cooling_setpoint
 

@@ -480,11 +480,14 @@ def setup_training(
         "time_step_seconds": 30,
         "heating_setpoint": 26.0,
         "cooling_setpoint": 28.0,
-        "external_temp_pattern": "fixed",
+        "external_temp_pattern": "sine",
         "setpoint_pattern": "schedule",
         "reward_type": reward_type,
         "energy_weight": energy_weight,
         "comfort_weight": comfort_weight,
+        "use_reward_shaping": True,
+        "random_start_time": True,
+        "shaping_weight": 0.3
     }
 
     # Create vectorized environment with optional normalization
@@ -595,7 +598,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--energy-weight",
         type=float,
-        default=0.0,
+        default=1.0,
         help="Weight for energy penalty in reward",
     )
     parser.add_argument(

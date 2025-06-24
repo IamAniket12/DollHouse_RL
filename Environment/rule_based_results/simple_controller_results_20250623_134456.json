@@ -1,0 +1,49 @@
+{
+    "controller_name": "Simple Rule-Based Controller",
+    "num_episodes": 1,
+    "environment_params": {
+        "episode_length": 2880,
+        "time_step_seconds": 30,
+        "heating_setpoint": 26.0,
+        "cooling_setpoint": 28.0,
+        "setpoint_pattern": "schedule",
+        "reward_type": "balanced",
+        "energy_weight": 0.0,
+        "comfort_weight": 1.0,
+        "random_start_time": false,
+        "use_reward_shaping": true,
+        "shaping_weight": 0.3
+    },
+    "episodes": [
+        {
+            "episode_id": 0,
+            "total_reward": 3117.064299234919,
+            "avg_reward": 1.0819383197622072,
+            "episode_start_time_offset": 0.0,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.019810389215331157,
+                "ground_floor_avg_hot_violation": 0.02312556249511191,
+                "ground_floor_max_violation": 4.342006457194209,
+                "top_floor_avg_cold_violation": 0.007723618748077143,
+                "top_floor_avg_hot_violation": 0.04828122921209435,
+                "top_floor_max_violation": 3.6454554730314044,
+                "time_in_comfort_band_ground_pct": 96.80666435265533,
+                "time_in_comfort_band_top_pct": 95.17528635890315
+            },
+            "energy_metrics": {
+                "ground_light_hours": 4.316666666666666,
+                "top_light_hours": 0.6666666666666666,
+                "total_light_hours": 4.983333333333333,
+                "ground_window_open_hours": 19.683333333333334,
+                "top_window_open_hours": 23.333333333333332
+            }
+        }
+    ],
+    "overall_metrics": {
+        "avg_total_reward": 3117.064299234919,
+        "avg_ground_comfort_pct": 96.80666435265533,
+        "avg_top_comfort_pct": 95.17528635890315,
+        "avg_light_energy": 4.983333333333333,
+        "avg_start_time_offset": 0.0
+    }
+}
