@@ -19,7 +19,7 @@ from wandb.integration.sb3 import WandbCallback
 
 # Import our modules
 from train_sindy_model import train_sindy_model
-from Environment.dollhouse_env import DollhouseThermalEnv
+from dollhouse_env import DollhouseThermalEnv
 
 
 class CustomWandbCallback(BaseCallback):

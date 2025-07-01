@@ -1,0 +1,14 @@
+{
+    "algorithm": "ppo",
+    "total_timesteps": 5000000,
+    "reward_type": "balanced",
+    "energy_weight": 0.0,
+    "comfort_weight": 1.0,
+    "model_path": "results/ppo_20250701_151444/logs/models/ppo_final_model",
+    "training_date": "2025-07-01 18:07:34",
+    "seed": 0,
+    "device": "cuda",
+    "n_envs": 8,
+    "vec_env_type": "subproc",
+    "normalized": true
+}
