@@ -19,7 +19,7 @@ from wandb.integration.sb3 import WandbCallback
 
 # Import our modules
 from train_sindy_model import train_sindy_model
-from dollhouse_env import DollhouseThermalEnv
+from Environment.dollhouse_env import DollhouseThermalEnv
 
 
 class CustomWandbCallback(BaseCallback):
@@ -487,7 +487,7 @@ def setup_training(
         "comfort_weight": comfort_weight,
         "use_reward_shaping": True,
         "random_start_time": True,
-        "shaping_weight": 0.3
+        "shaping_weight": 0.3,
     }
 
     # Create vectorized environment with optional normalization

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Controller Comparison Dashboard</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 40px; 
+            background-color: #f5f5f5; 
+            line-height: 1.6;
+        }
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            background-color: white; 
+            padding: 30px; 
+            border-radius: 10px; 
+            box-shadow: 0 0 15px rgba(0,0,0,0.1); 
+        }
+        h1 { 
+            color: #2c3e50; 
+            text-align: center; 
+            border-bottom: 3px solid #e74c3c; 
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+        h2 { 
+            color: #e74c3c; 
+            margin-top: 40px; 
+            border-left: 4px solid #e74c3c;
+            padding-left: 15px;
+        }
+        .comparison-info { 
+            background: linear-gradient(135deg, #ff7f7f 0%, #ff9999 100%);
+            color: white;
+            padding: 20px; 
+            border-radius: 10px; 
+            margin: 20px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .plot-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); 
+            gap: 25px; 
+            margin: 25px 0; 
+        }
+        .plot-item { 
+            text-align: center; 
+            background-color: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .plot-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+        }
+        .plot-item img { 
+            max-width: 100%; 
+            height: auto; 
+            border-radius: 5px; 
+            border: 2px solid #ecf0f1;
+        }
+        .plot-item h3 {
+            color: #2c3e50;
+            margin: 15px 0 10px 0;
+        }
+        .plot-item p { 
+            color: #7f8c8d; 
+            font-size: 14px; 
+            margin: 10px 0;
+        }
+        .controller-list {
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .controller-list ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .file-list {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #28a745;
+        }
+        .timestamp {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🥊 Controller Comparison Dashboard</h1>
+        
+        <div class="comparison-info">
+            <h2 style="color: white; margin-top: 0; border: none; padding: 0;">📊 Comparison Overview</h2>
+            <strong>Controllers Analyzed:</strong> 2<br>
+            <strong>Controllers:</strong> Rule-based, Controller 2<br>
+            <strong>Analysis Generated:</strong> 2025-06-27 12:21:39
+        </div>
+
+        <div class="controller-list">
+            <h3>🎯 Controllers in This Comparison:</h3>
+            <ul>
+                <li><strong>Controller 1:</strong> Rule-based</li>
+                <li><strong>Controller 2:</strong> Controller 2</li>
+            </ul>
+        </div>
+
+        <h2>📈 Comparison Visualizations</h2>
+        <div class="plot-grid">
+            <div class="plot-item">
+                <h3>Main Performance Comparison</h3>
+                <img src="main_comparison.png" alt="Main Comparison">
+                <p>Overall performance comparison including rewards, action usage, temperature control, and normalized metrics</p>
+            </div>
+            
+            <div class="plot-item">
+                <h3>Detailed Performance Analysis</h3>
+                <img src="performance_analysis.png" alt="Performance Analysis">
+                <p>In-depth analysis of reward, energy efficiency, temperature control quality, and comfort violations</p>
+            </div>
+            
+            <div class="plot-item">
+                <h3>Action Pattern Analysis</h3>
+                <img src="action_patterns.png" alt="Action Patterns">
+                <p>Action correlation matrices showing how different actions are coordinated by each controller</p>
+            </div>
+            
+            <div class="plot-item">
+                <h3>Action Usage Over Time</h3>
+                <img src="action_usage_time.png" alt="Action Usage Time">
+                <p>Evolution of lighting and window control actions throughout the episode</p>
+            </div>
+            
+            <div class="plot-item">
+                <h3>Temperature Control Comparison</h3>
+                <img src="temperature_comparison.png" alt="Temperature Comparison">
+                <p>Temperature distributions, average values, and variability comparison between controllers</p>
+            </div>
+        </div>
+
+        <h2>📁 Data Files</h2>
+        <div class="file-list">
+            <p><strong>📄 Generated Files:</strong></p>
+            <ul>
+                <li>📊 <a href="comparison_summary.json">comparison_summary.json</a> - Complete statistical summary in JSON format</li>
+                <li>📈 <a href="main_comparison.png">main_comparison.png</a> - Main comparison dashboard</li>
+                <li>🔍 <a href="performance_analysis.png">performance_analysis.png</a> - Detailed performance analysis</li>
+                <li>🎯 <a href="action_patterns.png">action_patterns.png</a> - Action correlation patterns</li>
+                <li>📊 <a href="action_usage_time.png">action_usage_time.png</a> - Action usage over time</li>
+                <li>🌡️ <a href="temperature_comparison.png">temperature_comparison.png</a> - Temperature control analysis</li>
+            </ul>
+        </div>
+
+        <div class="timestamp">
+            🕒 Generated on 2025-06-27 at 12:21:39 | 
+            🥊 Controllers: 2 | 
+            📊 Comprehensive Performance Comparison
+        </div>
+    </div>
+</body>
+</html>

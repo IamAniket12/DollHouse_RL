@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Policy Analysis - ppo_final_model</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 40px; 
+            background-color: #f5f5f5; 
+            line-height: 1.6;
+        }
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background-color: white; 
+            padding: 30px; 
+            border-radius: 10px; 
+            box-shadow: 0 0 15px rgba(0,0,0,0.1); 
+        }
+        h1 { 
+            color: #2c3e50; 
+            text-align: center; 
+            border-bottom: 3px solid #3498db; 
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+        h2 { 
+            color: #3498db; 
+            margin-top: 40px; 
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        h3 {
+            color: #2c3e50;
+            margin: 15px 0 10px 0;
+        }
+        .stats { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px; 
+            border-radius: 10px; 
+            margin: 20px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .stats strong { color: #fff; }
+        .plot-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); 
+            gap: 25px; 
+            margin: 25px 0; 
+        }
+        .plot-item { 
+            text-align: center; 
+            background-color: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .plot-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+        }
+        .plot-item img { 
+            max-width: 100%; 
+            height: auto; 
+            border-radius: 5px; 
+            border: 2px solid #ecf0f1;
+        }
+        .plot-item p { 
+            color: #7f8c8d; 
+            font-size: 14px; 
+            margin: 10px 0;
+        }
+        .interactive-section {
+            background-color: #ecf0f1;
+            padding: 25px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .interactive-link { 
+            display: inline-block; 
+            margin: 10px 15px 10px 0; 
+            padding: 12px 25px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            text-decoration: none; 
+            border-radius: 25px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .interactive-link:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+        }
+        .metadata { 
+            font-family: 'Courier New', monospace; 
+            background-color: #2c3e50; 
+            color: #ecf0f1;
+            padding: 20px; 
+            border-radius: 8px; 
+            white-space: pre-wrap;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .file-list {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #28a745;
+        }
+        .file-list ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .file-list a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .file-list a:hover {
+            text-decoration: underline;
+        }
+        .timestamp {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Policy Analysis Dashboard</h1>
+        
+        <div class="stats">
+            <h2 style="color: white; margin-top: 0; border: none; padding: 0;">📊 ppo_final_model</h2>
+            <strong>Quick Stats:</strong><br>
+            📈 Total Steps: 2,880<br>
+            🏆 Total Reward: 2969.167431064183<br>
+            ⏱️ Episode Length: 24.0 hours<br>
+            🕒 Analysis Generated: 2025-06-27 12:17:06
+        </div>
+
+        <h2>📈 2D Policy Visualizations</h2>
+        <div class="plot-grid">
+            <div class="plot-item">
+                <h3>Temperature-Action Heatmaps</h3>
+                <img src="2d_temperature_action_heatmap.png" alt="Temperature-Action Heatmaps">
+                <p>Shows action probabilities across different temperature conditions. Warmer colors indicate higher action probability.</p>
+            </div>
+            <div class="plot-item">
+                <h3>Action Patterns Over Time</h3>
+                <img src="2d_action_patterns_time.png" alt="Action Patterns Over Time">
+                <p>Temporal evolution of actions with temperature context. Shows how actions change over time in response to temperature variations.</p>
+            </div>
+            <div class="plot-item">
+                <h3>Decision Boundaries</h3>
+                <img src="2d_decision_boundaries.png" alt="Decision Boundaries">
+                <p>Policy decision boundaries in temperature space. Red points show when actions are taken, blue when not.</p>
+            </div>
+            <div class="plot-item">
+                <h3>State-Action Correlations</h3>
+                <img src="2d_state_action_correlations.png" alt="State-Action Correlations">
+                <p>Correlation matrix between environmental states and controller actions. Reveals which states most influence decisions.</p>
+            </div>
+            <div class="plot-item">
+                <h3>Temperature Deviation Response</h3>
+                <img src="2d_temperature_deviation_response.png" alt="Temperature Deviation Response">
+                <p>How the policy responds to temperature deviations from setpoints. Shows controller sensitivity to comfort zone violations.</p>
+            </div>
+            <div class="plot-item">
+                <h3>Multi-dimensional Policy View</h3>
+                <img src="2d_multidimensional_policy.png" alt="Multi-dimensional Policy View">
+                <p>Policy behavior across multiple state dimensions simultaneously. Each plot shows different state relationships.</p>
+            </div>
+        </div>
+
+        <h2>🌐 3D Policy Visualizations</h2>
+        <div class="plot-grid">
+            <div class="plot-item">
+                <h3>3D Action Surfaces</h3>
+                <img src="3d_action_surface.png" alt="3D Action Surfaces">
+                <p>Action policies visualized in 3D temperature space (ground, top, external). Color indicates action probability.</p>
+            </div>
+            <div class="plot-item">
+                <h3>3D State Trajectory</h3>
+                <img src="3d_trajectory.png" alt="3D State Trajectory">
+                <p>System state evolution through 3D space over time. Line shows trajectory, colors indicate temporal progression.</p>
+            </div>
+        </div>
+        <h2>🎮 Interactive 3D Visualizations</h2>
+        <div class="interactive-section">
+            <p>🖱️ Click the links below to open interactive 3D visualizations (rotate, zoom, hover for details):</p>
+            <a href="interactive_3d_action_policy.html" class="interactive-link">🎯 Interactive Action Policy</a>
+            <a href="interactive_3d_trajectory.html" class="interactive-link">🎯 Interactive Trajectory</a>
+            <a href="interactive_3d_multi_action.html" class="interactive-link">🎯 Interactive Multi-Action View</a>
+        </div>
+        <h2>📋 Performance Summary</h2>
+        <div class="plot-item">
+            <img src="summary_report.png" alt="Summary Report">
+            <p>Comprehensive performance analysis with key metrics and statistics</p>
+        </div>
+        <h2>📁 Data Files</h2>
+        <div class="file-list">
+            <p><strong>📄 Available Data Files:</strong></p>
+            <ul>
+                <li>📊 <a href="rl_model_20250627_121522_data.csv">Episode Data CSV</a> - Raw episode data with observations and actions</li>
+                <li>📈 <a href="summary_statistics.json">Summary Statistics JSON</a> - Computed performance metrics</li>
+                <li>🔧 <a href="rl_model_20250627_121522_metadata.json">Episode Metadata JSON</a> - Controller configuration and episode details</li>
+            </ul>
+        </div>
+        <h2>⚙️ Episode Configuration</h2>
+        <div class="metadata">{
+  "episode_name": "rl_model_20250627_121522",
+  "controller_type": "rl_model",
+  "model_path": "../Environment/results/ppo_20250623_134204/logs/models/ppo_final_model.zip",
+  "vec_normalize_path": "../Environment/results/ppo_20250623_134204/logs/models/vec_normalize.pkl",
+  "used_normalization": true,
+  "hysteresis": null,
+  "total_steps": 2880,
+  "total_reward": 2969.167431064183,
+  "avg_reward_per_step": 1.0309609135639524,
+  "episode_length_hours": 24.0,
+  "timestamp": "2025-06-27T12:15:24.955208",
+  "env_config": {
+    "episode_length": 2880,
+    "time_step_seconds": 30,
+    "initial_heating_setpoint": 26.0,
+    "initial_cooling_setpoint": 28.0,
+    "external_temp_pattern": "sine",
+    "setpoint_pattern": "schedule",
+    "reward_type": "balanced",
+    "energy_weight": 0.5,
+    "comfort_weight": 1.0,
+    "random_start_time": true,
+    "use_reward_shaping": true
+  },
+  "performance": {
+    "avg_ground_temp": 21.69476890563965,
+    "avg_top_temp": 22.194522857666016,
+    "avg_external_temp": 19.985254287719727,
+    "total_comfort_violations": 449.35585542292125,
+    "total_energy_use": 298.0,
+    "comfort_violation_rate": 0.2520833333333333,
+    "avg_lights_on": 0.10347222222222222,
+    "avg_windows_open": 0.8840277777777777
+  }
+}</div>
+        <div class="timestamp">
+            🕒 Generated on 2025-06-27 at 12:17:06 | 
+            🎯 Controller: ppo_final_model | 
+            📊 Total Data Points: 2,880
+        </div>
+    </div>
+</body>
+</html>
