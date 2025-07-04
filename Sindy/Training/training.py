@@ -1,5 +1,5 @@
 """
-SINDy Hyperparameter Optimization Script
+SINDy Hyperparameter Optimization Script - Updated with Separate Residual Plots
 
 This script performs hyperparameter tuning for Sparse Identification of Nonlinear Dynamics (SINDy) models.
 It evaluates different combinations of feature libraries and optimizers to find the best model for
@@ -531,6 +531,232 @@ def calculate_rmse(actual, predicted, variable_idx=None):
         return rmse_dict
 
 
+def plot_residuals_separate(test_datasets, best_result, results_dir):
+    """
+    Plot residuals separately for each test dataset for the best configuration
+
+    Parameters:
+    test_datasets: List of test datasets with their names
+    best_result: Best model evaluation result containing plot data
+    results_dir: Directory to save plots
+    """
+    # Create a figure for residual plots
+    n_tests = len(test_datasets)
+
+    # Calculate subplot grid dimensions
+    cols = min(3, n_tests)  # Maximum 3 columns
+    rows = (n_tests + cols - 1) // cols  # Ceiling division
+
+    # Create separate plots for Ground Floor and Top Floor residuals
+    for variable_idx, variable_name in enumerate(["Ground Floor", "Top Floor"]):
+        fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 4 * rows))
+        fig.suptitle(f"{variable_name} Residuals - Best Configuration", fontsize=16)
+
+        # Handle single subplot case
+        if n_tests == 1:
+            axes = [axes]
+        elif rows == 1:
+            axes = axes if hasattr(axes, "__len__") else [axes]
+        else:
+            axes = axes.flatten()
+
+        for i, test_result in enumerate(best_result["test_results"]):
+            if "plot_data" in test_result and test_result["multi_step"]["success"]:
+                # Get data
+                test_name = test_result["test_name"]
+                plot_data = test_result["plot_data"]
+
+                X_test = np.array(plot_data["X_test"])
+                X_pred_single = np.array(plot_data["X_pred_single"])
+                X_pred_multi = np.array(plot_data["X_pred_multi"])
+
+                # Calculate residuals
+                single_residuals = (
+                    X_test[:, variable_idx] - X_pred_single[:, variable_idx]
+                )
+                multi_residuals = (
+                    X_test[:, variable_idx] - X_pred_multi[:, variable_idx]
+                )
+
+                # Plot on subplot
+                ax = axes[i] if i < len(axes) else None
+                if ax is not None:
+                    time_steps = np.arange(len(X_test))
+                    ax.plot(
+                        time_steps,
+                        single_residuals,
+                        "b--",
+                        label="Single-step",
+                        alpha=0.7,
+                    )
+                    ax.plot(
+                        time_steps,
+                        multi_residuals,
+                        "r-.",
+                        label="Multi-step",
+                        alpha=0.7,
+                    )
+                    ax.axhline(y=0, color="k", linestyle="-", alpha=0.3)
+
+                    # Calculate RMSE for title
+                    rmse_single = np.sqrt(np.mean(single_residuals**2))
+                    rmse_multi = np.sqrt(np.mean(multi_residuals**2))
+
+                    ax.set_title(
+                        f"{test_name}\nSingle RMSE: {rmse_single:.4f}°C, Multi RMSE: {rmse_multi:.4f}°C",
+                        fontsize=10,
+                    )
+                    ax.set_xlabel("Time Steps")
+                    ax.set_ylabel("Residual (°C)")
+                    ax.grid(True, alpha=0.3)
+                    ax.legend()
+
+        # Hide empty subplots
+        for i in range(n_tests, len(axes)):
+            axes[i].set_visible(False)
+
+        plt.tight_layout()
+
+        # Save figure
+        filename = f'residuals_{variable_name.lower().replace(" ", "_")}_separate.png'
+        plt.savefig(os.path.join(results_dir, filename), dpi=300, bbox_inches="tight")
+        plt.close()
+
+
+def plot_predictions(test_name, plot_data, results_dir):
+    """
+    Plot single-step and multi-step predictions along with residuals
+
+    Parameters:
+    test_name: Name of the test dataset
+    plot_data: Dictionary containing prediction data
+    results_dir: Directory to save plots
+    """
+    # Convert data from list to numpy arrays
+    X_test = np.array(plot_data["X_test"])
+    X_pred_single = np.array(plot_data["X_pred_single"])
+    X_pred_multi = np.array(plot_data["X_pred_multi"])
+
+    # Create figure with subplots
+    fig = plt.figure(figsize=(15, 10))
+    gs = plt.GridSpec(2, 3, figure=fig)
+
+    # Main title
+    fig.suptitle(f"SINDy Model Predictions - {test_name}", fontsize=16)
+
+    # Ground Floor Temperature - Predictions
+    ax1 = fig.add_subplot(gs[0, 0])
+    time_steps = np.arange(len(X_test))
+    ax1.plot(time_steps, X_test[:, 0], "k-", label="Actual")
+    ax1.plot(time_steps, X_pred_single[:, 0], "b--", label="Single-step")
+    ax1.plot(time_steps, X_pred_multi[:, 0], "r-.", label="Multi-step")
+    ax1.set_title("Ground Floor Temperature")
+    ax1.set_ylabel("Temperature (°C)")
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    # Top Floor Temperature - Predictions
+    ax2 = fig.add_subplot(gs[0, 1])
+    ax2.plot(time_steps, X_test[:, 1], "k-", label="Actual")
+    ax2.plot(time_steps, X_pred_single[:, 1], "b--", label="Single-step")
+    ax2.plot(time_steps, X_pred_multi[:, 1], "r-.", label="Multi-step")
+    ax2.set_title("Top Floor Temperature")
+    ax2.set_ylabel("Temperature (°C)")
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    # Combined scatter plot
+    ax3 = fig.add_subplot(gs[0, 2])
+    ax3.scatter(X_test[:, 0], X_test[:, 1], c="k", s=15, alpha=0.5, label="Actual")
+    ax3.scatter(
+        X_pred_multi[:, 0],
+        X_pred_multi[:, 1],
+        c="r",
+        s=15,
+        alpha=0.5,
+        label="Multi-step",
+    )
+    ax3.set_xlabel("Ground Floor Temperature (°C)")
+    ax3.set_ylabel("Top Floor Temperature (°C)")
+    ax3.set_title("Temperature Relationship")
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+
+    # Ground Floor - Residuals
+    ax4 = fig.add_subplot(gs[1, 0])
+    single_residuals_ground = X_test[:, 0] - X_pred_single[:, 0]
+    multi_residuals_ground = X_test[:, 0] - X_pred_multi[:, 0]
+
+    ax4.plot(time_steps, single_residuals_ground, "b--", label="Single-step")
+    ax4.plot(time_steps, multi_residuals_ground, "r-.", label="Multi-step")
+    ax4.axhline(y=0, color="k", linestyle="-", alpha=0.3)
+    ax4.set_title("Ground Floor Residuals")
+    ax4.set_xlabel("Time Steps")
+    ax4.set_ylabel("Residual (°C)")
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
+
+    # Top Floor - Residuals
+    ax5 = fig.add_subplot(gs[1, 1])
+    single_residuals_top = X_test[:, 1] - X_pred_single[:, 1]
+    multi_residuals_top = X_test[:, 1] - X_pred_multi[:, 1]
+
+    ax5.plot(time_steps, single_residuals_top, "b--", label="Single-step")
+    ax5.plot(time_steps, multi_residuals_top, "r-.", label="Multi-step")
+    ax5.axhline(y=0, color="k", linestyle="-", alpha=0.3)
+    ax5.set_title("Top Floor Residuals")
+    ax5.set_xlabel("Time Steps")
+    ax5.set_ylabel("Residual (°C)")
+    ax5.legend()
+    ax5.grid(True, alpha=0.3)
+
+    # Residual distribution
+    ax6 = fig.add_subplot(gs[1, 2])
+    # Combine ground and top floor residuals
+    all_residuals_single = np.concatenate(
+        [single_residuals_ground, single_residuals_top]
+    )
+    all_residuals_multi = np.concatenate([multi_residuals_ground, multi_residuals_top])
+
+    # Plot histograms
+    ax6.hist(
+        all_residuals_single, bins=30, alpha=0.5, color="blue", label="Single-step"
+    )
+    ax6.hist(all_residuals_multi, bins=30, alpha=0.5, color="red", label="Multi-step")
+    ax6.set_title("Residual Distribution")
+    ax6.set_xlabel("Residual (°C)")
+    ax6.set_ylabel("Frequency")
+    ax6.legend()
+    ax6.grid(True, alpha=0.3)
+
+    # Calculate RMSE values for annotation
+    rmse_ground_single = np.sqrt(np.mean(single_residuals_ground**2))
+    rmse_top_single = np.sqrt(np.mean(single_residuals_top**2))
+    rmse_ground_multi = np.sqrt(np.mean(multi_residuals_ground**2))
+    rmse_top_multi = np.sqrt(np.mean(multi_residuals_top**2))
+
+    # Add RMSE annotation
+    stats_text = (
+        f"RMSE Values:\n"
+        f"Single-step: Ground={rmse_ground_single:.4f}°C, Top={rmse_top_single:.4f}°C\n"
+        f"Multi-step: Ground={rmse_ground_multi:.4f}°C, Top={rmse_top_multi:.4f}°C"
+    )
+    fig.text(
+        0.5, 0.01, stats_text, ha="center", bbox=dict(facecolor="white", alpha=0.5)
+    )
+
+    # Adjust layout
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+    # Save figure
+    plt.savefig(
+        os.path.join(results_dir, f'predictions_{test_name.replace(".", "_")}.png'),
+        dpi=300,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
 def evaluate_model_config(lib_config, opt_config, X_train, u_train, test_datasets):
     """
     Evaluate a specific model configuration on multiple test datasets
@@ -681,140 +907,6 @@ def evaluate_model_config(lib_config, opt_config, X_train, u_train, test_dataset
         result["error"] = f"Model training failed: {str(e)}"
 
     return result
-
-
-def plot_predictions(test_name, plot_data, results_dir):
-    """
-    Plot single-step and multi-step predictions along with residuals
-
-    Parameters:
-    test_name: Name of the test dataset
-    plot_data: Dictionary containing prediction data
-    results_dir: Directory to save plots
-    """
-    # Convert data from list to numpy arrays
-    X_test = np.array(plot_data["X_test"])
-    X_pred_single = np.array(plot_data["X_pred_single"])
-    X_pred_multi = np.array(plot_data["X_pred_multi"])
-
-    # Create figure with subplots
-    fig = plt.figure(figsize=(15, 10))
-    gs = plt.GridSpec(2, 3, figure=fig)
-
-    # Main title
-    fig.suptitle(f"SINDy Model Predictions - {test_name}", fontsize=16)
-
-    # Ground Floor Temperature - Predictions
-    ax1 = fig.add_subplot(gs[0, 0])
-    time_steps = np.arange(len(X_test))
-    ax1.plot(time_steps, X_test[:, 0], "k-", label="Actual")
-    ax1.plot(time_steps, X_pred_single[:, 0], "b--", label="Single-step")
-    ax1.plot(time_steps, X_pred_multi[:, 0], "r-.", label="Multi-step")
-    ax1.set_title("Ground Floor Temperature")
-    ax1.set_ylabel("Temperature (°C)")
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
-
-    # Top Floor Temperature - Predictions
-    ax2 = fig.add_subplot(gs[0, 1])
-    ax2.plot(time_steps, X_test[:, 1], "k-", label="Actual")
-    ax2.plot(time_steps, X_pred_single[:, 1], "b--", label="Single-step")
-    ax2.plot(time_steps, X_pred_multi[:, 1], "r-.", label="Multi-step")
-    ax2.set_title("Top Floor Temperature")
-    ax2.set_ylabel("Temperature (°C)")
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-
-    # Combined scatter plot
-    ax3 = fig.add_subplot(gs[0, 2])
-    ax3.scatter(X_test[:, 0], X_test[:, 1], c="k", s=15, alpha=0.5, label="Actual")
-    ax3.scatter(
-        X_pred_multi[:, 0],
-        X_pred_multi[:, 1],
-        c="r",
-        s=15,
-        alpha=0.5,
-        label="Multi-step",
-    )
-    ax3.set_xlabel("Ground Floor Temperature (°C)")
-    ax3.set_ylabel("Top Floor Temperature (°C)")
-    ax3.set_title("Temperature Relationship")
-    ax3.legend()
-    ax3.grid(True, alpha=0.3)
-
-    # Ground Floor - Residuals
-    ax4 = fig.add_subplot(gs[1, 0])
-    single_residuals_ground = X_test[:, 0] - X_pred_single[:, 0]
-    multi_residuals_ground = X_test[:, 0] - X_pred_multi[:, 0]
-
-    ax4.plot(time_steps, single_residuals_ground, "b--", label="Single-step")
-    ax4.plot(time_steps, multi_residuals_ground, "r-.", label="Multi-step")
-    ax4.axhline(y=0, color="k", linestyle="-", alpha=0.3)
-    ax4.set_title("Ground Floor Residuals")
-    ax4.set_xlabel("Time Steps")
-    ax4.set_ylabel("Residual (°C)")
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
-
-    # Top Floor - Residuals
-    ax5 = fig.add_subplot(gs[1, 1])
-    single_residuals_top = X_test[:, 1] - X_pred_single[:, 1]
-    multi_residuals_top = X_test[:, 1] - X_pred_multi[:, 1]
-
-    ax5.plot(time_steps, single_residuals_top, "b--", label="Single-step")
-    ax5.plot(time_steps, multi_residuals_top, "r-.", label="Multi-step")
-    ax5.axhline(y=0, color="k", linestyle="-", alpha=0.3)
-    ax5.set_title("Top Floor Residuals")
-    ax5.set_xlabel("Time Steps")
-    ax5.set_ylabel("Residual (°C)")
-    ax5.legend()
-    ax5.grid(True, alpha=0.3)
-
-    # Residual distribution
-    ax6 = fig.add_subplot(gs[1, 2])
-    # Combine ground and top floor residuals
-    all_residuals_single = np.concatenate(
-        [single_residuals_ground, single_residuals_top]
-    )
-    all_residuals_multi = np.concatenate([multi_residuals_ground, multi_residuals_top])
-
-    # Plot histograms
-    ax6.hist(
-        all_residuals_single, bins=30, alpha=0.5, color="blue", label="Single-step"
-    )
-    ax6.hist(all_residuals_multi, bins=30, alpha=0.5, color="red", label="Multi-step")
-    ax6.set_title("Residual Distribution")
-    ax6.set_xlabel("Residual (°C)")
-    ax6.set_ylabel("Frequency")
-    ax6.legend()
-    ax6.grid(True, alpha=0.3)
-
-    # Calculate RMSE values for annotation
-    rmse_ground_single = np.sqrt(np.mean(single_residuals_ground**2))
-    rmse_top_single = np.sqrt(np.mean(single_residuals_top**2))
-    rmse_ground_multi = np.sqrt(np.mean(multi_residuals_ground**2))
-    rmse_top_multi = np.sqrt(np.mean(multi_residuals_top**2))
-
-    # Add RMSE annotation
-    stats_text = (
-        f"RMSE Values:\n"
-        f"Single-step: Ground={rmse_ground_single:.4f}°C, Top={rmse_top_single:.4f}°C\n"
-        f"Multi-step: Ground={rmse_ground_multi:.4f}°C, Top={rmse_top_multi:.4f}°C"
-    )
-    fig.text(
-        0.5, 0.01, stats_text, ha="center", bbox=dict(facecolor="white", alpha=0.5)
-    )
-
-    # Adjust layout
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-
-    # Save figure
-    plt.savefig(
-        os.path.join(results_dir, f'predictions_{test_name.replace(".", "_")}.png'),
-        dpi=300,
-        bbox_inches="tight",
-    )
-    plt.close()
 
 
 def run_hyperparameter_optimization(
@@ -1000,6 +1092,10 @@ def run_hyperparameter_optimization(
                 plot_predictions(
                     test_result["test_name"], test_result["plot_data"], results_dir
                 )
+
+        # Generate separate residual plots for all test datasets
+        print(f"Generating separate residual plots for the best configuration...")
+        plot_residuals_separate(test_datasets, best_result, results_dir)
     else:
         best_config = None
         print(
@@ -1172,95 +1268,6 @@ def main():
                 f"{result.get('avg_rmse_ground', float('inf')):<15.4f} {result.get('avg_rmse_top', float('inf')):<15.4f} {note}"
             )
 
-    args = parser.parse_args()
-
-    # Create output directory
-    # global results_dir
-    if args.outdir:
-        results_dir = args.outdir
-    else:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        results_dir = f"results/sindy_hyperopt_{timestamp}"
-
-    os.makedirs(results_dir, exist_ok=True)
-    print(f"Results will be saved to: {os.path.abspath(results_dir)}")
-
-    # Run hyperparameter optimization
-    print(f"Starting hyperparameter optimization")
-    print(f"  Using physics-informed features: {args.features}")
-    print(f"  Training files: {args.train}")
-    print(f"  Testing files: {args.test}")
-
-    all_results, best_config = run_hyperparameter_optimization(
-        args.train,
-        args.test,
-        add_features=args.features,
-        warmup_period_minutes=args.warmup,
-        n_jobs=args.jobs,
-    )
-
-    # Save results
-    results_data = {
-        "timestamp": datetime.now().isoformat(),
-        "train_files": args.train,
-        "test_files": args.test,
-        "warmup_period_minutes": args.warmup,
-        "physics_features": args.features,
-        "results": all_results,
-        "best_config": best_config,
-    }
-
-    results_file = os.path.join(results_dir, "sindy_hyperopt_results.json")
-    with open(results_file, "w") as f:
-        json.dump(results_data, f, indent=2)
-    print(f"Results saved to {results_file}")
-
-    # Print summary of successful configurations
-    successful_results = [
-        r for r in all_results if r.get("multi_step_success_rate", 0) > 0
-    ]
-    print(
-        f"\nSuccessful configurations: {len(successful_results)} out of {len(all_results)}"
-    )
-
-    if successful_results:
-        # Sort by success rate and RMSE - same criteria used for best configuration selection
-        def score_result(r):
-            # First priority: Multi-step prediction success rate (higher is better)
-            success_rate = r.get("multi_step_success_rate", 0)
-            # Second priority: Average multi-step RMSE (lower is better)
-            avg_rmse = (
-                r.get("avg_rmse_ground", float("inf"))
-                + r.get("avg_rmse_top", float("inf"))
-            ) / 2
-            return (-success_rate, avg_rmse)
-
-        sorted_results = sorted(successful_results, key=score_result)
-
-        # Print top 10 configurations
-        print(
-            "\nTop configurations (sorted by multi-step success rate, then by multi-step RMSE):"
-        )
-        print("-" * 130)
-        print(
-            f"{'Library':<15} {'Optimizer':<10} {'Parameters':<40} {'Success Rate':<15} {'Ground RMSE':<15} {'Top RMSE':<15} {'Note'}"
-        )
-        print("-" * 130)
-
-        for i, result in enumerate(sorted_results[:10]):
-            opt_params_str = result.get("optimizer_params_str", "")
-            if len(opt_params_str) > 38:
-                opt_params_str = opt_params_str[:35] + "..."
-
-            # Add a note if this is the best configuration
-            note = "BEST" if result == best_result else ""
-
-            print(
-                f"{result['library_name']:<15} {result['optimizer_name']:<10} {opt_params_str:<40} "
-                f"{result.get('multi_step_success_rate', 0):<15.2f} "
-                f"{result.get('avg_rmse_ground', float('inf')):<15.4f} {result.get('avg_rmse_top', float('inf')):<15.4f} {note}"
-            )
-
         # Print best configuration details
         if best_config:
             print("\nBest configuration (based on multi-step prediction performance):")
@@ -1310,6 +1317,7 @@ def main():
 
             # Plot location reminder
             print(f"\nPrediction plots saved to {results_dir}")
+            print(f"Separate residual plots saved to {results_dir}")
     else:
         print(
             "No successful configurations found. Try different hyperparameter ranges or adjust model configurations."
