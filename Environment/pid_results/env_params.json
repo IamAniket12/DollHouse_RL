@@ -11,6 +11,15 @@
     "use_reward_shaping": true,
     "random_start_time": false,
     "shaping_weight": 0.3,
-    "sindy_model": "SINDy model object (not serializable)"
-    
+    "sindy_model": "SINDy model object (not serializable)",
+    "ground_pid_params": {
+        "kp": 2.5,
+        "ki": 0.15,
+        "kd": 0.08
+    },
+    "top_pid_params": {
+        "kp": 2.0,
+        "ki": 0.1,
+        "kd": 0.05
+    }
 }

@@ -11,6 +11,8 @@
     "use_reward_shaping": true,
     "random_start_time": false,
     "shaping_weight": 0.3,
-    "sindy_model": "SINDy model object (not serializable)"
-    
+    "sindy_model": "SINDy model object (not serializable)",
+    "fuzzy_heating_threshold": 0.2,
+    "fuzzy_cooling_threshold": 0.2,
+    "fuzzy_debug": false
 }

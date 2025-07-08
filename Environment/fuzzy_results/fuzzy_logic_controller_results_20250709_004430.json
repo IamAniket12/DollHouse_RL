@@ -1,0 +1,49 @@
+{
+    "controller_name": "Fixed Fuzzy Logic Controller",
+    "num_episodes": 1,
+    "environment_params": {
+        "episode_length": 5760,
+        "time_step_seconds": 30,
+        "heating_setpoint": 26.0,
+        "cooling_setpoint": 28.0,
+        "setpoint_pattern": "schedule",
+        "reward_type": "balanced",
+        "energy_weight": 0.0,
+        "comfort_weight": 1.0,
+        "random_start_time": false,
+        "use_reward_shaping": true,
+        "shaping_weight": 0.3
+    },
+    "episodes": [
+        {
+            "episode_id": 0,
+            "total_reward": 5383.393069951631,
+            "avg_reward": 0.9344546207171726,
+            "episode_start_time_offset": 0.0,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.018252484775330945,
+                "ground_floor_avg_hot_violation": 0.01916055779056475,
+                "ground_floor_max_violation": 4.227351120580021,
+                "top_floor_avg_cold_violation": 0.0062816335548755604,
+                "top_floor_avg_hot_violation": 0.050471122514221596,
+                "top_floor_max_violation": 3.840557422684455,
+                "time_in_comfort_band_ground_pct": 97.0664815136261,
+                "time_in_comfort_band_top_pct": 94.48012497830238
+            },
+            "energy_metrics": {
+                "ground_light_hours": 7.2,
+                "top_light_hours": 5.216666666666667,
+                "total_light_hours": 12.416666666666666,
+                "ground_window_open_hours": 4.15,
+                "top_window_open_hours": 19.058333333333334
+            }
+        }
+    ],
+    "overall_metrics": {
+        "avg_total_reward": 5383.393069951631,
+        "avg_ground_comfort_pct": 97.0664815136261,
+        "avg_top_comfort_pct": 94.48012497830238,
+        "avg_light_energy": 12.416666666666666,
+        "avg_start_time_offset": 0.0
+    }
+}
