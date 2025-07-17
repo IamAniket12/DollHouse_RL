@@ -10,9 +10,6 @@
     "comfort_weight": 1.0,
     "use_reward_shaping": true,
     "random_start_time": false,
-    "shaping_weight": 0.3,
-    "sindy_model": "SINDy model object (not serializable)",
-    "n_envs": 4,
-    "vec_env_type": "subproc",
-    "normalized": true
+    "shaping_weight": 0.3
+    
 }
