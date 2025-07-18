@@ -1,0 +1,49 @@
+{
+    "controller_name": "PPO Agent (deterministic)",
+    "num_episodes": 1,
+    "environment_params": {
+        "episode_length": 5760,
+        "time_step_seconds": 30,
+        "heating_setpoint": 26.0,
+        "cooling_setpoint": 28.0,
+        "setpoint_pattern": "schedule",
+        "reward_type": "balanced",
+        "energy_weight": 1.0,
+        "comfort_weight": 0.6,
+        "random_start_time": false,
+        "use_reward_shaping": true,
+        "shaping_weight": 0.3
+    },
+    "episodes": [
+        {
+            "episode_id": 0,
+            "total_reward": 8208.735313417044,
+            "avg_reward": 1.424880283530124,
+            "episode_start_time_offset": 0.0,
+            "comfort_metrics": {
+                "ground_floor_avg_cold_violation": 0.019093125126395483,
+                "ground_floor_avg_hot_violation": 0.02742397328114998,
+                "ground_floor_max_violation": 4.553145344452627,
+                "top_floor_avg_cold_violation": 0.00816445999103427,
+                "top_floor_avg_hot_violation": 0.04811368454676928,
+                "top_floor_max_violation": 3.65858032311926,
+                "time_in_comfort_band_ground_pct": 96.1985766360007,
+                "time_in_comfort_band_top_pct": 93.33449053983684
+            },
+            "energy_metrics": {
+                "ground_light_hours": 5.475,
+                "top_light_hours": 0.3333333333333333,
+                "total_light_hours": 5.808333333333334,
+                "ground_window_open_hours": 2.5166666666666666,
+                "top_window_open_hours": 46.96666666666667
+            }
+        }
+    ],
+    "overall_metrics": {
+        "avg_total_reward": 8208.735313417044,
+        "avg_ground_comfort_pct": 96.1985766360007,
+        "avg_top_comfort_pct": 93.33449053983684,
+        "avg_light_energy": 5.808333333333334,
+        "avg_start_time_offset": 0.0
+    }
+}
