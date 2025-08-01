@@ -1,727 +1,816 @@
-import numpy as np
-import os
-import time
+"""
+RL Agent Evaluation Module.
+
+This module provides comprehensive evaluation capabilities for trained RL agents
+on the dollhouse thermal environment with support for normalized environments.
+"""
+
 import argparse
 import json
-import matplotlib.pyplot as plt
+import os
 from datetime import datetime
+from typing import Dict, Optional, Tuple
 
-# Import Stable Baselines
-from stable_baselines3 import PPO, A2C, DQN, SAC
-from stable_baselines3.common.evaluation import evaluate_policy
+import matplotlib.pyplot as plt
+import numpy as np
+from stable_baselines3 import A2C, DQN, PPO, SAC
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-# Import our modules
-from train_sindy_model import train_sindy_model
 from dollhouse_env import DollhouseThermalEnv
+from train_sindy_model import train_sindy_model
 
 
-def load_model(model_path):
+class RLAgentEvaluator:
     """
-    Load a trained RL model.
+    Comprehensive evaluator for trained RL agents.
 
-    Args:
-        model_path: Path to the saved model
-
-    Returns:
-        model: Loaded model
+    Provides standardized evaluation, visualization, and analysis
+    capabilities for RL agents on the thermal control task.
     """
-    # Determine the algorithm from the model path
-    if "ppo" in model_path.lower():
-        model = PPO.load(model_path)
-    elif "a2c" in model_path.lower():
-        model = A2C.load(model_path)
-    elif "dqn" in model_path.lower():
-        model = DQN.load(model_path)
-    elif "sac" in model_path.lower():
-        model = SAC.load(model_path)
-    else:
-        raise ValueError(f"Unknown algorithm in model path: {model_path}")
 
-    print(f"Successfully loaded model from {model_path}")
-    return model
+    def __init__(self, env, model, model_info: Optional[Dict] = None):
+        """
+        Initialize RL agent evaluator.
 
+        Args:
+            env: Environment for evaluation (may be normalized)
+            model: Trained RL model
+            model_info: Optional metadata about the model
+        """
+        self.env = env
+        self.model = model
+        self.model_info = model_info or {}
+        self.is_vec_env = isinstance(env, (DummyVecEnv, VecNormalize))
+        self.base_env = self._get_base_environment()
 
-def recreate_environment(env_params_path, data_file=None, model_dir=None):
-    """
-    Recreate the environment using saved parameters, with normalization if available.
-
-    Args:
-        env_params_path: Path to the saved environment parameters
-        data_file: Optional path to data file for SINDy model (overrides saved path)
-        model_dir: Directory where the model is saved (to look for normalization stats)
-
-    Returns:
-        env: Recreated environment (possibly normalized)
-    """
-    # Load environment parameters
-    with open(env_params_path, "r") as f:
-        env_params = json.load(f)
-
-    # If data file is provided, retrain SINDy model
-    if data_file:
-        print(f"Training SINDy model on {data_file}...")
-        sindy_model = train_sindy_model(file_path=data_file)
-    else:
-        # Use the data file from the saved parameters if available
-        if "data_file" in env_params:
-            data_file = env_params["data_file"]
-            print(f"Training SINDy model on {data_file}...")
-            sindy_model = train_sindy_model(file_path=data_file)
+    def _get_base_environment(self):
+        """Extract the base environment from potential wrappers."""
+        if isinstance(self.env, VecNormalize):
+            return self.env.venv.envs[0]
+        elif isinstance(self.env, DummyVecEnv):
+            return self.env.envs[0]
         else:
-            raise ValueError("No data file provided or found in environment parameters")
+            return self.env
 
-    # Replace SINDy model placeholder with actual model
-    env_params_copy = env_params.copy()
-    env_params_copy["sindy_model"] = sindy_model
+    def evaluate(
+        self,
+        num_episodes: int = 5,
+        render: bool = False,
+        deterministic: bool = True,
+        verbose: bool = True,
+    ) -> Dict:
+        """
+        Evaluate the RL agent comprehensively.
 
-    # Remove parameters that aren't for the environment constructor
-    env_params_copy.pop("n_envs", None)
-    env_params_copy.pop("vec_env_type", None)
-    env_params_copy.pop("normalized", None)
+        Args:
+            num_episodes: Number of episodes to evaluate
+            render: Whether to render during evaluation
+            deterministic: Whether to use deterministic policy
+            verbose: Whether to print detailed progress
 
-    # Create environment with saved parameters
-    env = DollhouseThermalEnv(**env_params_copy)
-
-    # Check if normalization was used during training
-    normalized = env_params.get("normalized", False)
-
-    if normalized and model_dir:
-        # Look for normalization statistics
-        vec_normalize_path = os.path.join(model_dir, "vec_normalize.pkl")
-        if os.path.exists(vec_normalize_path):
-            print(f"Found normalization statistics at {vec_normalize_path}")
-            # Wrap environment in DummyVecEnv first
-            env = DummyVecEnv([lambda: env])
-            # Load and apply normalization
-            env = VecNormalize.load(vec_normalize_path, env)
-            # Set to evaluation mode (don't update statistics)
-            env.training = False
-            env.norm_reward = False  # Don't normalize rewards during evaluation
-            print("Applied normalization wrapper for evaluation")
-        else:
+        Returns:
+            Dictionary containing comprehensive evaluation results
+        """
+        if verbose:
+            print(f"Evaluating RL agent for {num_episodes} episodes...")
             print(
-                f"Warning: Training used normalization but vec_normalize.pkl not found at {vec_normalize_path}"
+                f"Environment type: {'Normalized' if isinstance(self.env, VecNormalize) else 'Standard'}"
             )
-            print("Proceeding without normalization - results may be suboptimal")
-    elif normalized:
-        print("Warning: Training used normalization but model_dir not provided")
-        print("Proceeding without normalization - results may be suboptimal")
 
-    return env
+        total_rewards = []
+        episode_data = {
+            "temperatures": [],
+            "external_temps": [],
+            "actions": [],
+            "rewards": [],
+            "setpoints": [],
+        }
 
+        for episode in range(num_episodes):
+            episode_result = self._evaluate_single_episode(
+                episode, num_episodes, render, deterministic, verbose
+            )
 
-def evaluate_agent(env, model, num_episodes=5, render=False, verbose=True):
-    """
-    Evaluate a trained agent on the environment using deterministic actions.
+            total_rewards.append(episode_result["total_reward"])
+            for key in episode_data:
+                episode_data[key].append(episode_result[key])
 
-    Handles both normalized and non-normalized environments.
+        performance = self._calculate_performance_metrics(total_rewards, episode_data)
+        performance["model_info"] = self.model_info
+        performance["evaluation_config"] = {
+            "num_episodes": num_episodes,
+            "deterministic": deterministic,
+            "was_normalized": isinstance(self.env, VecNormalize),
+        }
 
-    Args:
-        env: The environment to evaluate on (may be VecNormalize wrapped)
-        model: The trained RL model
-        num_episodes: Number of episodes to evaluate
-        render: Whether to render the environment
-        verbose: Whether to print detailed logs
+        if verbose:
+            self._print_evaluation_summary(performance)
 
-    Returns:
-        dict: Evaluation results
-    """
-    # Check if environment is normalized
-    is_vec_env = isinstance(env, (DummyVecEnv, VecNormalize))
+        return performance
 
-    # Get the base environment for accessing attributes
-    if isinstance(env, VecNormalize):
-        base_env = env.venv.envs[0]
-    elif isinstance(env, DummyVecEnv):
-        base_env = env.envs[0]
-    else:
-        base_env = env
-
-    total_rewards = []
-    episode_temperatures = []
-    episode_actions = []
-    episode_rewards = []
-    episode_external_temps = []
-    episode_setpoints = []
-
-    for episode in range(num_episodes):
+    def _evaluate_single_episode(
+        self,
+        episode: int,
+        num_episodes: int,
+        render: bool,
+        deterministic: bool,
+        verbose: bool,
+    ) -> Dict:
+        """Evaluate a single episode and collect data."""
         # Reset environment
-        if is_vec_env:
-            obs = env.reset()
-            # For vec environments, obs is shape (1, obs_dim)
+        if self.is_vec_env:
+            obs = self.env.reset()
             obs = obs[0] if len(obs.shape) > 1 else obs
         else:
-            obs, info = env.reset()
+            obs, info = self.env.reset()
 
         terminated = False
         truncated = False
         episode_reward = 0
 
-        # Track data for this episode
         temps = []
+        ext_temps = []
         actions = []
         rewards = []
-        ext_temps = []
         setpoints = []
 
         while not terminated and not truncated:
-            # Get current setpoints from base environment
-            heating_sp = base_env.heating_setpoint
-            cooling_sp = base_env.cooling_setpoint
+            # Get current setpoints
+            heating_sp = self.base_env.heating_setpoint
+            cooling_sp = self.base_env.cooling_setpoint
             setpoints.append([heating_sp, cooling_sp])
 
-            # Get original observation for logging (before normalization)
-            if isinstance(env, VecNormalize):
-                # Get unnormalized observation for display
-                original_obs = (
-                    env.get_original_obs()[0]
-                    if hasattr(env, "get_original_obs")
-                    else obs
+            # Get action from model
+            if self.is_vec_env:
+                action, _ = self.model.predict(
+                    obs.reshape(1, -1), deterministic=deterministic
                 )
+                action = action[0]
             else:
-                original_obs = obs
-
-            # Select action using model
-            if is_vec_env:
-                # For vectorized environments, we need to add batch dimension
-                action, _ = model.predict(obs.reshape(1, -1), deterministic=True)
-                action = action[0]  # Remove batch dimension
-            else:
-                action, _ = model.predict(obs, deterministic=True)
+                action, _ = self.model.predict(obs, deterministic=deterministic)
 
             if verbose and len(temps) % 100 == 0:
-                # Use original observation for display
-                display_obs = original_obs if isinstance(env, VecNormalize) else obs
+                original_obs = self._get_original_observation(obs)
                 print(
-                    f"Step {len(temps)}: Action: {action}, "
-                    f"Temps: {display_obs[0]:.1f}/{display_obs[1]:.1f}°C, "
+                    f"Episode {episode+1}, Step {len(temps)}: "
+                    f"Action: {action}, Temps: {original_obs[0]:.1f}/{original_obs[1]:.1f}°C, "
                     f"Setpoints: {heating_sp:.1f}/{cooling_sp:.1f}°C"
                 )
 
-            # Take action in environment
-            if is_vec_env:
-                obs, reward, done, info = env.step([action])
+            # Take action
+            if self.is_vec_env:
+                obs, reward, done, info = self.env.step([action])
                 obs = obs[0]
                 reward = reward[0]
                 done = done[0]
                 info = info[0] if isinstance(info, list) else info
-
-                # VecEnv uses 'done' instead of terminated/truncated
                 terminated = done
                 truncated = False
             else:
-                obs, reward, terminated, truncated, info = env.step(action)
+                obs, reward, terminated, truncated, info = self.env.step(action)
 
             episode_reward += reward
 
-            # Record data - use original observation values
-            if isinstance(env, VecNormalize):
-                # Get unnormalized observation for recording
-                original_obs = (
-                    env.get_original_obs()[0]
-                    if hasattr(env, "get_original_obs")
-                    else obs
-                )
-            else:
-                original_obs = obs
-
+            # Record data using original observation values
+            original_obs = self._get_original_observation(obs)
             temps.append([original_obs[0], original_obs[1]])
             ext_temps.append(original_obs[2])
             actions.append(action)
             rewards.append(reward)
 
-            if render and not is_vec_env:
-                base_env.render()
-
-        total_rewards.append(episode_reward)
-        episode_temperatures.append(temps)
-        episode_external_temps.append(ext_temps)
-        episode_actions.append(actions)
-        episode_rewards.append(rewards)
-        episode_setpoints.append(setpoints)
+            if render and not self.is_vec_env:
+                self.base_env.render()
 
         if verbose:
             print(
                 f"Episode {episode+1}/{num_episodes}: Total Reward = {episode_reward:.2f}"
             )
 
-    # Get performance summary from base environment
-    performance = base_env.get_performance_summary()
+        return {
+            "total_reward": episode_reward,
+            "temperatures": temps,
+            "external_temps": ext_temps,
+            "actions": actions,
+            "rewards": rewards,
+            "setpoints": setpoints,
+        }
 
-    if verbose:
-        print("\nAgent Evaluation Summary:")
+    def _get_original_observation(self, obs: np.ndarray) -> np.ndarray:
+        """Get original (unnormalized) observation values."""
+        if isinstance(self.env, VecNormalize):
+            # Get unnormalized observation for recording
+            return (
+                self.env.get_original_obs()[0]
+                if hasattr(self.env, "get_original_obs")
+                else obs
+            )
+        else:
+            return obs
+
+    def _calculate_performance_metrics(
+        self, total_rewards: list, episode_data: Dict
+    ) -> Dict:
+        """Calculate comprehensive performance metrics."""
+        # Get basic performance summary from environment
+        if hasattr(self.base_env, "get_performance_summary"):
+            performance = self.base_env.get_performance_summary()
+        else:
+            performance = {
+                "avg_total_reward": np.mean(total_rewards),
+                "std_total_reward": np.std(total_rewards),
+            }
+
+        # Add episode data
+        performance["episode_data"] = episode_data
+
+        # Set setpoint information
+        if episode_data["setpoints"] and len(episode_data["setpoints"][0]) > 0:
+            performance["heating_setpoint"] = episode_data["setpoints"][0][0][0]
+            performance["cooling_setpoint"] = episode_data["setpoints"][0][0][1]
+            performance["has_dynamic_setpoints"] = True
+        else:
+            performance["heating_setpoint"] = self.base_env.initial_heating_setpoint
+            performance["cooling_setpoint"] = self.base_env.initial_cooling_setpoint
+            performance["has_dynamic_setpoints"] = False
+
+        # Add environment configuration
+        performance["reward_type"] = self.base_env.reward_type
+        performance["energy_weight"] = self.base_env.energy_weight
+        performance["comfort_weight"] = self.base_env.comfort_weight
+
+        return performance
+
+    def _print_evaluation_summary(self, performance: Dict) -> None:
+        """Print comprehensive evaluation summary."""
+        print("\nRL Agent Evaluation Summary:")
         print(f"Average Total Reward: {performance['avg_total_reward']:.2f}")
         print(f"Ground Floor Comfort %: {performance['avg_ground_comfort_pct']:.2f}%")
         print(f"Top Floor Comfort %: {performance['avg_top_comfort_pct']:.2f}%")
         print(f"Average Light Hours: {performance['avg_light_hours']:.2f}")
 
-    # Add raw episode data to performance dict
-    performance["episode_data"] = {
-        "temperatures": episode_temperatures,
-        "external_temps": episode_external_temps,
-        "actions": episode_actions,
-        "rewards": episode_rewards,
-        "total_rewards": total_rewards,
-        "setpoints": episode_setpoints,
-    }
-
-    # Set setpoint information
-    if episode_setpoints and len(episode_setpoints[0]) > 0:
-        performance["heating_setpoint"] = episode_setpoints[0][0][0]
-        performance["cooling_setpoint"] = episode_setpoints[0][0][1]
-        performance["has_dynamic_setpoints"] = True
-    else:
-        performance["heating_setpoint"] = base_env.initial_heating_setpoint
-        performance["cooling_setpoint"] = base_env.initial_cooling_setpoint
-        performance["has_dynamic_setpoints"] = False
-
-    performance["reward_type"] = base_env.reward_type
-    performance["energy_weight"] = base_env.energy_weight
-    performance["comfort_weight"] = base_env.comfort_weight
-    performance["was_normalized"] = is_vec_env
-
-    return performance
+        if performance.get("model_info"):
+            print(f"\nModel Information:")
+            for key, value in performance["model_info"].items():
+                print(f"  {key}: {value}")
 
 
-def visualize_performance(performance, output_dir, agent_name="RL Agent"):
-    """
-    Create visualizations of agent performance with dynamic setpoint support.
+class ModelLoader:
+    """Utility class for loading trained RL models and environments."""
 
-    Args:
-        performance: Performance dictionary from evaluate_agent
-        output_dir: Directory to save visualizations
-        agent_name: Name of the agent for plot titles
-    """
-    os.makedirs(output_dir, exist_ok=True)
+    @staticmethod
+    def load_model(model_path: str):
+        """
+        Load a trained RL model from file.
 
-    # Extract episode data
-    episode_temperatures = performance["episode_data"]["temperatures"]
-    episode_external_temps = performance["episode_data"]["external_temps"]
-    episode_actions = performance["episode_data"]["actions"]
-    episode_rewards = performance["episode_data"]["rewards"]
-    episode_setpoints = performance["episode_data"].get("setpoints", [])
+        Args:
+            model_path: Path to the saved model
 
-    # Check if we have dynamic setpoints
-    has_dynamic_setpoints = len(episode_setpoints) > 0 and len(episode_setpoints[0]) > 0
+        Returns:
+            Loaded RL model
 
-    # Plot temperatures, actions, setpoints, and rewards for the first episode
-    plt.figure(figsize=(15, 16))
+        Raises:
+            ValueError: If algorithm cannot be determined from path
+        """
+        algorithm = ModelLoader._determine_algorithm(model_path)
 
-    # Temperature plot with dynamic setpoints
-    plt.subplot(5, 1, 1)
-    ground_temps = [temp[0] for temp in episode_temperatures[0]]
-    top_temps = [temp[1] for temp in episode_temperatures[0]]
-    plt.plot(ground_temps, label="Ground Floor Temperature", linewidth=2)
-    plt.plot(top_temps, label="Top Floor Temperature", linewidth=2)
+        algorithm_map = {"ppo": PPO, "a2c": A2C, "dqn": DQN, "sac": SAC}
 
-    if has_dynamic_setpoints:
-        heating_setpoints = [sp[0] for sp in episode_setpoints[0]]
-        cooling_setpoints = [sp[1] for sp in episode_setpoints[0]]
-        plt.plot(heating_setpoints, "r--", label="Heating Setpoint", linewidth=1.5)
-        plt.plot(cooling_setpoints, "b--", label="Cooling Setpoint", linewidth=1.5)
-    else:
-        heating_setpoint = performance.get("heating_setpoint", 20.0)
-        cooling_setpoint = performance.get("cooling_setpoint", 24.0)
-        plt.axhline(
-            y=heating_setpoint,
-            color="r",
-            linestyle="--",
-            label=f"Heating Setpoint ({heating_setpoint}°C)",
-        )
-        plt.axhline(
-            y=cooling_setpoint,
-            color="b",
-            linestyle="--",
-            label=f"Cooling Setpoint ({cooling_setpoint}°C)",
-        )
+        if algorithm not in algorithm_map:
+            raise ValueError(f"Unknown algorithm: {algorithm}")
 
-    # Add normalization indicator to title
-    normalization_status = (
-        " (Normalized)" if performance.get("was_normalized", False) else ""
-    )
-    plt.title(f"{agent_name} - Temperatures (Episode 1){normalization_status}")
-    plt.ylabel("Temperature (°C)")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+        model = algorithm_map[algorithm].load(model_path)
+        print(f"Successfully loaded {algorithm.upper()} model from {model_path}")
 
-    # Separate setpoint plot for better visibility (only if dynamic)
-    if has_dynamic_setpoints:
-        plt.subplot(5, 1, 2)
-        heating_setpoints = [sp[0] for sp in episode_setpoints[0]]
-        cooling_setpoints = [sp[1] for sp in episode_setpoints[0]]
-        plt.plot(heating_setpoints, "r-", label="Heating Setpoint", linewidth=2)
-        plt.plot(cooling_setpoints, "b-", label="Cooling Setpoint", linewidth=2)
-        plt.title(f"{agent_name} - Dynamic Setpoints (Episode 1)")
-        plt.ylabel("Temperature (°C)")
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        subplot_offset = 1
-    else:
-        subplot_offset = 0
+        return model, algorithm
 
-    # External temperature plot
-    plt.subplot(5, 1, 2 + subplot_offset)
-    ext_temps = episode_external_temps[0]
-    plt.plot(ext_temps, label="External Temperature", color="purple", linewidth=2)
+    @staticmethod
+    def _determine_algorithm(model_path: str) -> str:
+        """Determine algorithm from model path."""
+        path_lower = model_path.lower()
 
-    if has_dynamic_setpoints:
-        heating_setpoints = [sp[0] for sp in episode_setpoints[0]]
-        cooling_setpoints = [sp[1] for sp in episode_setpoints[0]]
-        plt.plot(heating_setpoints, "r--", alpha=0.7, label="Heating Setpoint")
-        plt.plot(cooling_setpoints, "b--", alpha=0.7, label="Cooling Setpoint")
-    else:
-        heating_setpoint = performance.get("heating_setpoint", 20.0)
-        cooling_setpoint = performance.get("cooling_setpoint", 24.0)
-        plt.axhline(
-            y=heating_setpoint,
-            color="r",
-            linestyle="--",
-            alpha=0.7,
-            label=f"Heating Setpoint ({heating_setpoint}°C)",
-        )
-        plt.axhline(
-            y=cooling_setpoint,
-            color="b",
-            linestyle="--",
-            alpha=0.7,
-            label=f"Cooling Setpoint ({cooling_setpoint}°C)",
+        for algorithm in ["ppo", "a2c", "dqn", "sac"]:
+            if algorithm in path_lower:
+                return algorithm
+
+        raise ValueError(f"Cannot determine algorithm from model path: {model_path}")
+
+    @staticmethod
+    def recreate_environment(
+        env_params_path: str,
+        data_file: Optional[str] = None,
+        model_dir: Optional[str] = None,
+    ):
+        """
+        Recreate environment from saved parameters.
+
+        Args:
+            env_params_path: Path to saved environment parameters
+            data_file: Optional data file path (overrides saved path)
+            model_dir: Directory containing model and normalization files
+
+        Returns:
+            Recreated environment (possibly normalized)
+        """
+        with open(env_params_path, "r") as f:
+            env_params = json.load(f)
+
+        # Train or retrain SINDy model
+        data_path = data_file if data_file else env_params.get("data_file")
+        if not data_path:
+            raise ValueError("No data file provided or found in environment parameters")
+
+        print(f"Training SINDy model on {data_path}...")
+        sindy_model = train_sindy_model(file_path=data_path)
+
+        # Create environment
+        env_params_copy = env_params.copy()
+        env_params_copy["sindy_model"] = sindy_model
+
+        # Remove training-specific parameters
+        for key in ["n_envs", "vec_env_type", "normalized", "data_file"]:
+            env_params_copy.pop(key, None)
+
+        env = DollhouseThermalEnv(**env_params_copy)
+
+        # Apply normalization if it was used during training
+        normalized = env_params.get("normalized", False)
+
+        if normalized and model_dir:
+            vec_normalize_path = os.path.join(model_dir, "vec_normalize.pkl")
+            if os.path.exists(vec_normalize_path):
+                print(f"Found normalization statistics at {vec_normalize_path}")
+                env = DummyVecEnv([lambda: env])
+                env = VecNormalize.load(vec_normalize_path, env)
+                env.training = False
+                env.norm_reward = False
+                print("Applied normalization wrapper for evaluation")
+            else:
+                print(
+                    f"Warning: Training used normalization but {vec_normalize_path} not found"
+                )
+                print("Proceeding without normalization - results may be suboptimal")
+        elif normalized:
+            print("Warning: Training used normalization but model_dir not provided")
+
+        return env
+
+
+class VisualizationEngine:
+    """Engine for creating evaluation visualizations."""
+
+    @staticmethod
+    def create_evaluation_plots(
+        performance: Dict, output_dir: str, agent_name: str = "RL Agent"
+    ) -> None:
+        """
+        Create comprehensive evaluation visualizations.
+
+        Args:
+            performance: Performance dictionary from evaluation
+            output_dir: Directory to save visualizations
+            agent_name: Name of the agent for plot titles
+        """
+        os.makedirs(output_dir, exist_ok=True)
+
+        VisualizationEngine._plot_episode_analysis(performance, output_dir, agent_name)
+        VisualizationEngine._plot_summary_metrics(performance, output_dir, agent_name)
+        VisualizationEngine._plot_temperature_distributions(
+            performance, output_dir, agent_name
         )
 
-    plt.title(f"{agent_name} - External Temperature (Episode 1)")
-    plt.ylabel("Temperature (°C)")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    @staticmethod
+    def _plot_episode_analysis(
+        performance: Dict, output_dir: str, agent_name: str
+    ) -> None:
+        """Plot detailed episode analysis."""
+        episode_data = performance["episode_data"]
+        has_dynamic_setpoints = performance.get("has_dynamic_setpoints", False)
 
-    # Actions plot
-    plt.subplot(5, 1, 3 + subplot_offset)
-    actions = np.array(episode_actions[0])
-    action_names = ["Ground Light", "Ground Window", "Top Light", "Top Window"]
-    for i, name in enumerate(action_names):
-        plt.plot(actions[:, i], label=name, linewidth=2)
-    plt.title(f"{agent_name} - Actions (Episode 1)")
-    plt.ylabel("Action State (0/1)")
-    plt.ylim(-0.1, 1.1)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+        n_subplots = 5 if has_dynamic_setpoints else 4
+        fig, axes = plt.subplots(n_subplots, 1, figsize=(15, 4 * n_subplots))
 
-    # Rewards plot
-    plt.subplot(5, 1, 4 + subplot_offset)
-    plt.plot(episode_rewards[0], label="Step Reward", linewidth=2)
-    plt.title(f"{agent_name} - Rewards (Episode 1)")
-    plt.xlabel("Timestep")
-    plt.ylabel("Reward")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+        if n_subplots == 1:
+            axes = [axes]
 
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(
-            output_dir, f'{agent_name.lower().replace(" ", "_")}_episode_analysis.png'
-        ),
-        dpi=300,
-        bbox_inches="tight",
-    )
+        # Temperature plot
+        ground_temps = [temp[0] for temp in episode_data["temperatures"][0]]
+        top_temps = [temp[1] for temp in episode_data["temperatures"][0]]
 
-    # Summary metrics plot
-    plt.figure(figsize=(12, 8))
-    metrics = [
-        ("avg_total_reward", "Total Reward"),
-        ("avg_ground_comfort_pct", "Ground Floor Comfort %"),
-        ("avg_top_comfort_pct", "Top Floor Comfort %"),
-        ("avg_light_hours", "Light Hours"),
-    ]
+        axes[0].plot(ground_temps, label="Ground Floor Temperature", linewidth=2)
+        axes[0].plot(top_temps, label="Top Floor Temperature", linewidth=2)
 
-    for i, (metric, label) in enumerate(metrics):
-        plt.subplot(2, 2, i + 1)
-        plt.bar([agent_name], [performance.get(metric, 0)])
-        plt.title(label)
-        plt.grid(True, alpha=0.3)
-
-        # Add value label
-        plt.text(
-            0,
-            performance.get(metric, 0) + 0.1,
-            f"{performance.get(metric, 0):.2f}",
-            ha="center",
-            va="bottom",
-        )
-
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(output_dir, f'{agent_name.lower().replace(" ", "_")}_summary.png'),
-        dpi=300,
-        bbox_inches="tight",
-    )
-
-    # Create temperature distribution plot
-    plt.figure(figsize=(14, 6))
-
-    # Combine all temperature data across episodes
-    all_ground_temps = []
-    all_top_temps = []
-    all_heating_setpoints = []
-    all_cooling_setpoints = []
-
-    for episode_idx, episode_temps in enumerate(episode_temperatures):
-        all_ground_temps.extend([temp[0] for temp in episode_temps])
-        all_top_temps.extend([temp[1] for temp in episode_temps])
-
-        if has_dynamic_setpoints and episode_idx < len(episode_setpoints):
-            all_heating_setpoints.extend(
-                [sp[0] for sp in episode_setpoints[episode_idx]]
+        if has_dynamic_setpoints:
+            setpoints = episode_data["setpoints"][0]
+            heating_setpoints = [sp[0] for sp in setpoints]
+            cooling_setpoints = [sp[1] for sp in setpoints]
+            axes[0].plot(
+                heating_setpoints, "r--", label="Heating Setpoint", linewidth=1.5
             )
-            all_cooling_setpoints.extend(
-                [sp[1] for sp in episode_setpoints[episode_idx]]
+            axes[0].plot(
+                cooling_setpoints, "b--", label="Cooling Setpoint", linewidth=1.5
+            )
+        else:
+            heating_sp = performance.get("heating_setpoint", 20.0)
+            cooling_sp = performance.get("cooling_setpoint", 24.0)
+            axes[0].axhline(
+                y=heating_sp,
+                color="r",
+                linestyle="--",
+                label=f"Heating Setpoint ({heating_sp}°C)",
+            )
+            axes[0].axhline(
+                y=cooling_sp,
+                color="b",
+                linestyle="--",
+                label=f"Cooling Setpoint ({cooling_sp}°C)",
             )
 
-    # Ground floor temperature distribution
-    plt.subplot(1, 2, 1)
-    plt.hist(all_ground_temps, bins=30, alpha=0.7, edgecolor="black")
-
-    if has_dynamic_setpoints and all_heating_setpoints:
-        min_heating = min(all_heating_setpoints)
-        max_heating = max(all_heating_setpoints)
-        min_cooling = min(all_cooling_setpoints)
-        max_cooling = max(all_cooling_setpoints)
-
-        plt.axvspan(
-            min_heating,
-            max_heating,
-            alpha=0.2,
-            color="red",
-            label=f"Heating Range ({min_heating:.1f}-{max_heating:.1f}°C)",
+        normalization_status = (
+            " (Normalized)" if performance.get("was_normalized", False) else ""
         )
-        plt.axvspan(
-            min_cooling,
-            max_cooling,
-            alpha=0.2,
-            color="blue",
-            label=f"Cooling Range ({min_cooling:.1f}-{max_cooling:.1f}°C)",
+        axes[0].set_title(
+            f"{agent_name} - Temperatures (Episode 1){normalization_status}"
         )
-    else:
-        heating_setpoint = performance.get("heating_setpoint", 20.0)
-        cooling_setpoint = performance.get("cooling_setpoint", 24.0)
-        plt.axvline(
-            x=heating_setpoint,
-            color="r",
-            linestyle="--",
-            label=f"Heating Setpoint ({heating_setpoint}°C)",
+        axes[0].set_ylabel("Temperature (°C)")
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+
+        subplot_idx = 1
+
+        # Dynamic setpoints plot (if applicable)
+        if has_dynamic_setpoints:
+            setpoints = episode_data["setpoints"][0]
+            heating_setpoints = [sp[0] for sp in setpoints]
+            cooling_setpoints = [sp[1] for sp in setpoints]
+            axes[subplot_idx].plot(
+                heating_setpoints, "r-", label="Heating Setpoint", linewidth=2
+            )
+            axes[subplot_idx].plot(
+                cooling_setpoints, "b-", label="Cooling Setpoint", linewidth=2
+            )
+            axes[subplot_idx].set_title(f"{agent_name} - Dynamic Setpoints (Episode 1)")
+            axes[subplot_idx].set_ylabel("Temperature (°C)")
+            axes[subplot_idx].legend()
+            axes[subplot_idx].grid(True, alpha=0.3)
+        subplot_idx += 1
+
+        # Actions plot
+        actions = np.array(episode_data["actions"][0])
+        action_names = ["Ground Light", "Ground Window", "Top Light", "Top Window"]
+        colors = ["red", "blue", "orange", "cyan"]
+
+        for i, (name, color) in enumerate(zip(action_names, colors)):
+            axes[subplot_idx].plot(actions[:, i], label=name, linewidth=2, color=color)
+
+        axes[subplot_idx].set_title(f"{agent_name} - Actions (Episode 1)")
+        axes[subplot_idx].set_ylabel("Action State (0/1)")
+        axes[subplot_idx].set_ylim(-0.1, 1.1)
+        axes[subplot_idx].legend()
+        axes[subplot_idx].grid(True, alpha=0.3)
+        subplot_idx += 1
+
+        # Rewards plot
+        axes[subplot_idx].plot(
+            episode_data["rewards"][0], label="Step Reward", linewidth=2, color="green"
         )
-        plt.axvline(
-            x=cooling_setpoint,
-            color="b",
-            linestyle="--",
-            label=f"Cooling Setpoint ({cooling_setpoint}°C)",
+        axes[subplot_idx].set_title(f"{agent_name} - Rewards (Episode 1)")
+        axes[subplot_idx].set_xlabel("Timestep")
+        axes[subplot_idx].set_ylabel("Reward")
+        axes[subplot_idx].legend()
+        axes[subplot_idx].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(
+                output_dir,
+                f'{agent_name.lower().replace(" ", "_")}_episode_analysis.png',
+            ),
+            dpi=300,
+            bbox_inches="tight",
         )
+        plt.close()
 
-    plt.title(f"{agent_name} - Ground Floor Temperature Distribution")
-    plt.xlabel("Temperature (°C)")
-    plt.ylabel("Frequency")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    @staticmethod
+    def _plot_summary_metrics(
+        performance: Dict, output_dir: str, agent_name: str
+    ) -> None:
+        """Plot summary performance metrics."""
+        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
 
-    # Top floor temperature distribution
-    plt.subplot(1, 2, 2)
-    plt.hist(all_top_temps, bins=30, alpha=0.7, edgecolor="black")
+        metrics = [
+            ("avg_total_reward", "Total Reward"),
+            ("avg_ground_comfort_pct", "Ground Floor Comfort %"),
+            ("avg_top_comfort_pct", "Top Floor Comfort %"),
+            ("avg_light_hours", "Light Hours"),
+        ]
 
-    if has_dynamic_setpoints and all_heating_setpoints:
-        plt.axvspan(
-            min_heating,
-            max_heating,
-            alpha=0.2,
-            color="red",
-            label=f"Heating Range ({min_heating:.1f}-{max_heating:.1f}°C)",
+        for i, (metric, label) in enumerate(metrics):
+            row, col = i // 2, i % 2
+            value = performance.get(metric, 0)
+
+            bar = axes[row, col].bar([agent_name], [value])
+            axes[row, col].set_title(label)
+            axes[row, col].grid(True, alpha=0.3)
+
+            # Add value label on bar
+            axes[row, col].text(
+                0, value + 0.1, f"{value:.2f}", ha="center", va="bottom"
+            )
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(
+                output_dir, f'{agent_name.lower().replace(" ", "_")}_summary.png'
+            ),
+            dpi=300,
+            bbox_inches="tight",
         )
-        plt.axvspan(
-            min_cooling,
-            max_cooling,
-            alpha=0.2,
-            color="blue",
-            label=f"Cooling Range ({min_cooling:.1f}-{max_cooling:.1f}°C)",
+        plt.close()
+
+    @staticmethod
+    def _plot_temperature_distributions(
+        performance: Dict, output_dir: str, agent_name: str
+    ) -> None:
+        """Plot temperature distribution analysis."""
+        episode_data = performance["episode_data"]
+        has_dynamic_setpoints = performance.get("has_dynamic_setpoints", False)
+
+        # Combine all temperature data across episodes
+        all_ground_temps = []
+        all_top_temps = []
+        all_heating_setpoints = []
+        all_cooling_setpoints = []
+
+        for episode_idx, episode_temps in enumerate(episode_data["temperatures"]):
+            all_ground_temps.extend([temp[0] for temp in episode_temps])
+            all_top_temps.extend([temp[1] for temp in episode_temps])
+
+            if has_dynamic_setpoints and episode_idx < len(episode_data["setpoints"]):
+                episode_setpoints = episode_data["setpoints"][episode_idx]
+                all_heating_setpoints.extend([sp[0] for sp in episode_setpoints])
+                all_cooling_setpoints.extend([sp[1] for sp in episode_setpoints])
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+        # Ground floor temperature distribution
+        ax1.hist(all_ground_temps, bins=30, alpha=0.7, edgecolor="black")
+
+        if has_dynamic_setpoints and all_heating_setpoints:
+            min_heating = min(all_heating_setpoints)
+            max_heating = max(all_heating_setpoints)
+            min_cooling = min(all_cooling_setpoints)
+            max_cooling = max(all_cooling_setpoints)
+
+            ax1.axvspan(
+                min_heating,
+                max_heating,
+                alpha=0.2,
+                color="red",
+                label=f"Heating Range ({min_heating:.1f}-{max_heating:.1f}°C)",
+            )
+            ax1.axvspan(
+                min_cooling,
+                max_cooling,
+                alpha=0.2,
+                color="blue",
+                label=f"Cooling Range ({min_cooling:.1f}-{max_cooling:.1f}°C)",
+            )
+        else:
+            heating_sp = performance.get("heating_setpoint", 20.0)
+            cooling_sp = performance.get("cooling_setpoint", 24.0)
+            ax1.axvline(
+                x=heating_sp,
+                color="r",
+                linestyle="--",
+                label=f"Heating Setpoint ({heating_sp}°C)",
+            )
+            ax1.axvline(
+                x=cooling_sp,
+                color="b",
+                linestyle="--",
+                label=f"Cooling Setpoint ({cooling_sp}°C)",
+            )
+
+        ax1.set_title(f"{agent_name} - Ground Floor Temperature Distribution")
+        ax1.set_xlabel("Temperature (°C)")
+        ax1.set_ylabel("Frequency")
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Top floor temperature distribution
+        ax2.hist(all_top_temps, bins=30, alpha=0.7, edgecolor="black")
+
+        if has_dynamic_setpoints and all_heating_setpoints:
+            ax2.axvspan(
+                min_heating,
+                max_heating,
+                alpha=0.2,
+                color="red",
+                label=f"Heating Range ({min_heating:.1f}-{max_heating:.1f}°C)",
+            )
+            ax2.axvspan(
+                min_cooling,
+                max_cooling,
+                alpha=0.2,
+                color="blue",
+                label=f"Cooling Range ({min_cooling:.1f}-{max_cooling:.1f}°C)",
+            )
+        else:
+            heating_sp = performance.get("heating_setpoint", 20.0)
+            cooling_sp = performance.get("cooling_setpoint", 24.0)
+            ax2.axvline(
+                x=heating_sp,
+                color="r",
+                linestyle="--",
+                label=f"Heating Setpoint ({heating_sp}°C)",
+            )
+            ax2.axvline(
+                x=cooling_sp,
+                color="b",
+                linestyle="--",
+                label=f"Cooling Setpoint ({cooling_sp}°C)",
+            )
+
+        ax2.set_title(f"{agent_name} - Top Floor Temperature Distribution")
+        ax2.set_xlabel("Temperature (°C)")
+        ax2.set_ylabel("Frequency")
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(
+                output_dir,
+                f'{agent_name.lower().replace(" ", "_")}_temperature_distribution.png',
+            ),
+            dpi=300,
+            bbox_inches="tight",
         )
-    else:
-        heating_setpoint = performance.get("heating_setpoint", 20.0)
-        cooling_setpoint = performance.get("cooling_setpoint", 24.0)
-        plt.axvline(
-            x=heating_setpoint,
-            color="r",
-            linestyle="--",
-            label=f"Heating Setpoint ({heating_setpoint}°C)",
-        )
-        plt.axvline(
-            x=cooling_setpoint,
-            color="b",
-            linestyle="--",
-            label=f"Cooling Setpoint ({cooling_setpoint}°C)",
-        )
-
-    plt.title(f"{agent_name} - Top Floor Temperature Distribution")
-    plt.xlabel("Temperature (°C)")
-    plt.ylabel("Frequency")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(
-            output_dir,
-            f'{agent_name.lower().replace(" ", "_")}_temperature_distribution.png',
-        ),
-        dpi=300,
-        bbox_inches="tight",
-    )
-
-    print(f"Visualizations saved to {output_dir}")
+        plt.close()
 
 
-def main(
-    model_path,
-    data_file,
-    env_params_path=None,
-    num_episodes=5,
-    render=False,
-    output_dir=None,
-    verbose=True,
-):
+def evaluate_rl_agent(
+    model_path: str,
+    data_file: str,
+    env_params_path: Optional[str] = None,
+    num_episodes: int = 5,
+    render: bool = False,
+    output_dir: Optional[str] = None,
+    verbose: bool = True,
+    deterministic: bool = True,
+) -> Dict:
     """
-    Main function to evaluate a trained agent.
+    Complete pipeline for evaluating a trained RL agent.
 
     Args:
         model_path: Path to the trained model
-        data_file: Path to data file for training SINDy model
-        env_params_path: Path to the saved environment parameters
+        data_file: Path to data file for SINDy model training
+        env_params_path: Path to saved environment parameters
         num_episodes: Number of episodes to evaluate
-        render: Whether to render the environment
+        render: Whether to render during evaluation
         output_dir: Directory to save results
         verbose: Whether to print detailed logs
+        deterministic: Whether to use deterministic policy
+
+    Returns:
+        Dictionary containing comprehensive evaluation results
     """
-    # Set output directory
+    # Setup output directory
     if output_dir is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = f"eval_results/{timestamp}"
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Get model directory
+    # Load model
+    model, algorithm = ModelLoader.load_model(model_path)
     model_dir = os.path.dirname(model_path)
 
-    # Find env_params_path if not provided
+    # Find environment parameters if not provided
     if env_params_path is None:
-        # Try to find it in the same directory as the model
-        potential_path = os.path.join(model_dir, "..", "..", "env_params.json")
-        if os.path.exists(potential_path):
-            env_params_path = potential_path
-            print(f"Found environment parameters at {env_params_path}")
-        else:
-            # Try alternative path structure
-            potential_path = os.path.join(model_dir, "..", "env_params.json")
-            if os.path.exists(potential_path):
-                env_params_path = potential_path
-                print(f"Found environment parameters at {env_params_path}")
-            else:
-                raise ValueError(
-                    "env_params_path not provided and not found in model directory"
-                )
+        env_params_path = _find_env_params_path(model_dir)
 
-    # Load model
-    model = load_model(model_path)
+    # Recreate environment
+    env = ModelLoader.recreate_environment(env_params_path, data_file, model_dir)
 
-    # Recreate environment (with normalization if applicable)
-    env = recreate_environment(env_params_path, data_file, model_dir)
+    # Print configuration
+    base_env = (
+        env.venv.envs[0]
+        if isinstance(env, VecNormalize)
+        else (env.envs[0] if isinstance(env, DummyVecEnv) else env)
+    )
 
-    # Get base environment for printing info
-    if isinstance(env, VecNormalize):
-        base_env = env.venv.envs[0]
-    elif isinstance(env, DummyVecEnv):
-        base_env = env.envs[0]
-    else:
-        base_env = env
+    if verbose:
+        print(f"\nEnvironment Configuration:")
+        print(f"Setpoint Pattern: {base_env.setpoint_pattern}")
+        print(f"Base Heating Setpoint: {base_env.initial_heating_setpoint}")
+        print(f"Base Cooling Setpoint: {base_env.initial_cooling_setpoint}")
+        print(
+            f"Using {'normalized' if isinstance(env, VecNormalize) else 'standard'} environment"
+        )
 
-    # Print environment setpoint configuration
-    print(f"\nEnvironment Configuration:")
-    print(f"Setpoint Pattern: {base_env.setpoint_pattern}")
-    print(f"Base Heating Setpoint: {base_env.initial_heating_setpoint}")
-    print(f"Base Cooling Setpoint: {base_env.initial_cooling_setpoint}")
-    if isinstance(env, VecNormalize):
-        print("Using normalized environment for evaluation")
+    # Create evaluator and run evaluation
+    model_info = {
+        "algorithm": algorithm.upper(),
+        "model_path": model_path,
+        "evaluation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
 
-    # Evaluate agent
-    print(f"\nEvaluating agent deterministically for {num_episodes} episodes...")
-
-    performance = evaluate_agent(
-        env=env,
-        model=model,
+    evaluator = RLAgentEvaluator(env, model, model_info)
+    performance = evaluator.evaluate(
         num_episodes=num_episodes,
         render=render,
+        deterministic=deterministic,
         verbose=verbose,
     )
 
-    # Get algorithm name from model path
-    algorithm = "unknown"
-    for alg in ["ppo", "a2c", "dqn", "sac"]:
-        if alg in model_path.lower():
-            algorithm = alg.upper()
-            break
-
-    # Save performance results
-    results_path = os.path.join(output_dir, f"{algorithm}_deterministic_results.json")
-    # Convert numpy arrays to lists for JSON serialization
-    with open(results_path, "w") as f:
-        serializable_perf = {}
-        for key, value in performance.items():
-            if key == "episode_data":
-                serializable_perf[key] = {
-                    "temperatures": [
-                        [[float(t) for t in temp] for temp in episode]
-                        for episode in value["temperatures"]
-                    ],
-                    "external_temps": [
-                        [float(t) for t in temps] for temps in value["external_temps"]
-                    ],
-                    "actions": [
-                        [[int(a) for a in action] for action in episode]
-                        for episode in value["actions"]
-                    ],
-                    "rewards": [
-                        [float(r) for r in rewards] for rewards in value["rewards"]
-                    ],
-                    "total_rewards": [float(r) for r in value["total_rewards"]],
-                    "setpoints": (
-                        [
-                            [[float(sp) for sp in setpoint] for setpoint in episode]
-                            for episode in value.get("setpoints", [])
-                        ]
-                        if "setpoints" in value
-                        else []
-                    ),
-                }
-            elif isinstance(value, (np.integer, np.floating, np.ndarray)):
-                serializable_perf[key] = (
-                    value.item() if hasattr(value, "item") else value.tolist()
-                )
-            else:
-                serializable_perf[key] = value
-
-        json.dump(serializable_perf, f, indent=4)
+    # Save results
+    results_path = os.path.join(output_dir, f"{algorithm}_evaluation_results.json")
+    _save_evaluation_results(performance, results_path)
 
     # Save environment results
     base_env.save_results(
-        os.path.join(output_dir, f"{algorithm}_deterministic_env_results.json"),
-        controller_name=f"{algorithm} Agent (deterministic)",
+        os.path.join(output_dir, f"{algorithm}_environment_results.json"),
+        controller_name=f"{algorithm.upper()} Agent",
     )
 
-    # Visualize performance
-    visualize_performance(performance, output_dir, agent_name=f"{algorithm} Agent")
+    # Create visualizations
+    VisualizationEngine.create_evaluation_plots(
+        performance, output_dir, f"{algorithm.upper()} Agent"
+    )
 
-    print(f"\nEvaluation completed. Results saved to {output_dir}")
+    if verbose:
+        print(f"\nEvaluation completed. Results saved to {output_dir}")
 
     return performance
 
 
-if __name__ == "__main__":
+def _find_env_params_path(model_dir: str) -> str:
+    """Find environment parameters file in model directory hierarchy."""
+    potential_paths = [
+        os.path.join(model_dir, "..", "..", "env_params.json"),
+        os.path.join(model_dir, "..", "env_params.json"),
+        os.path.join(os.path.dirname(model_dir), "env_params.json"),
+    ]
+
+    for path in potential_paths:
+        if os.path.exists(path):
+            print(f"Found environment parameters at {path}")
+            return path
+
+    raise FileNotFoundError("env_params.json not found in model directory hierarchy")
+
+
+def _save_evaluation_results(performance: Dict, filepath: str) -> None:
+    """Save evaluation results with proper JSON serialization."""
+    serializable_perf = {}
+
+    for key, value in performance.items():
+        if key == "episode_data":
+            serializable_perf[key] = {
+                "temperatures": [
+                    [[float(t) for t in temp] for temp in episode]
+                    for episode in value["temperatures"]
+                ],
+                "external_temps": [
+                    [float(t) for t in temps] for temps in value["external_temps"]
+                ],
+                "actions": [
+                    [[int(a) for a in action] for action in episode]
+                    for episode in value["actions"]
+                ],
+                "rewards": [
+                    [float(r) for r in rewards] for rewards in value["rewards"]
+                ],
+                "setpoints": (
+                    [
+                        [[float(sp) for sp in setpoint] for setpoint in episode]
+                        for episode in value.get("setpoints", [])
+                    ]
+                    if "setpoints" in value
+                    else []
+                ),
+            }
+        elif isinstance(value, (np.integer, np.floating)):
+            serializable_perf[key] = (
+                float(value) if isinstance(value, np.floating) else int(value)
+            )
+        elif isinstance(value, np.ndarray):
+            serializable_perf[key] = value.tolist()
+        else:
+            serializable_perf[key] = value
+
+    with open(filepath, "w") as f:
+        json.dump(serializable_perf, f, indent=4)
+
+    print(f"Evaluation results saved to {filepath}")
+
+
+def main():
+    """Main function for command-line interface."""
     parser = argparse.ArgumentParser(
-        description="Evaluate a trained RL agent on the dollhouse environment"
+        description="Evaluate trained RL agent on dollhouse environment",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     # Required arguments
@@ -740,22 +829,28 @@ if __name__ == "__main__":
         "--env-params",
         type=str,
         default=None,
-        help="Path to the saved environment parameters",
+        help="Path to saved environment parameters",
     )
     parser.add_argument(
         "--episodes", type=int, default=5, help="Number of episodes to evaluate"
     )
     parser.add_argument(
-        "--render", action="store_true", help="Render the environment during evaluation"
+        "--render", action="store_true", help="Render environment during evaluation"
     )
     parser.add_argument(
         "--output", type=str, default=None, help="Directory to save evaluation results"
     )
     parser.add_argument("--quiet", action="store_true", help="Suppress detailed logs")
+    parser.add_argument(
+        "--stochastic",
+        action="store_true",
+        help="Use stochastic policy instead of deterministic",
+    )
 
     args = parser.parse_args()
 
-    main(
+    # Run evaluation
+    performance = evaluate_rl_agent(
         model_path=args.model,
         data_file=args.data,
         env_params_path=args.env_params,
@@ -763,17 +858,11 @@ if __name__ == "__main__":
         render=args.render,
         output_dir=args.output,
         verbose=not args.quiet,
+        deterministic=not args.stochastic,
     )
 
-# Example usage:
-# For normalized model:
-# python evaluate_rl_agent.py \
-#   --model "results/ppo_20250523_normalized/logs/models/ppo_final_model" \
-#   --data "../Data/dollhouse-data-2025-03-24.csv" \
-#   --episodes 5
+    return performance
 
-# For non-normalized model:
-# python evaluate_rl_agent.py \
-#   --model "results/ppo_20250523_regular/logs/models/ppo_final_model" \
-#   --data "../Data/dollhouse-data-2025-03-24.csv" \
-#   --episodes 5
+
+if __name__ == "__main__":
+    main()
