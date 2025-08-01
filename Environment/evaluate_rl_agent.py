@@ -111,6 +111,34 @@ def recreate_environment(env_params_path, data_file=None, model_dir=None):
     return env
 
 
+def calculate_control_stability(episode_actions):
+    """
+    Calculate control stability metric as total state changes divided by episode length.
+
+    Args:
+        episode_actions: List of action arrays for the episode
+
+    Returns:
+        float: Control stability metric (state changes per timestep)
+    """
+    if len(episode_actions) <= 1:
+        return 0.0
+
+    actions = np.array(episode_actions)
+    total_state_changes = 0
+
+    # Count state changes for each action dimension
+    for action_dim in range(actions.shape[1]):
+        action_series = actions[:, action_dim]
+        state_changes = np.sum(np.diff(action_series) != 0)
+        total_state_changes += state_changes
+
+    # Normalize by episode length
+    control_stability = total_state_changes / len(episode_actions)
+
+    return control_stability
+
+
 def evaluate_agent(env, model, num_episodes=5, render=False, verbose=True):
     """
     Evaluate a trained agent on the environment using deterministic actions.
@@ -125,7 +153,7 @@ def evaluate_agent(env, model, num_episodes=5, render=False, verbose=True):
         verbose: Whether to print detailed logs
 
     Returns:
-        dict: Evaluation results
+        dict: Evaluation results including control stability
     """
     # Check if environment is normalized
     is_vec_env = isinstance(env, (DummyVecEnv, VecNormalize))
@@ -144,6 +172,7 @@ def evaluate_agent(env, model, num_episodes=5, render=False, verbose=True):
     episode_rewards = []
     episode_external_temps = []
     episode_setpoints = []
+    control_stability_scores = []
 
     for episode in range(num_episodes):
         # Reset environment
@@ -234,6 +263,10 @@ def evaluate_agent(env, model, num_episodes=5, render=False, verbose=True):
             if render and not is_vec_env:
                 base_env.render()
 
+        # Calculate control stability for this episode
+        episode_control_stability = calculate_control_stability(actions)
+        control_stability_scores.append(episode_control_stability)
+
         total_rewards.append(episode_reward)
         episode_temperatures.append(temps)
         episode_external_temps.append(ext_temps)
@@ -243,11 +276,17 @@ def evaluate_agent(env, model, num_episodes=5, render=False, verbose=True):
 
         if verbose:
             print(
-                f"Episode {episode+1}/{num_episodes}: Total Reward = {episode_reward:.2f}"
+                f"Episode {episode+1}/{num_episodes}: Total Reward = {episode_reward:.2f}, "
+                f"Control Stability = {episode_control_stability:.3f}"
             )
 
     # Get performance summary from base environment
     performance = base_env.get_performance_summary()
+
+    # Add control stability metrics
+    performance["control_stability"] = np.mean(control_stability_scores)
+    performance["control_stability_std"] = np.std(control_stability_scores)
+    performance["control_stability_scores"] = control_stability_scores
 
     if verbose:
         print("\nAgent Evaluation Summary:")
@@ -255,6 +294,9 @@ def evaluate_agent(env, model, num_episodes=5, render=False, verbose=True):
         print(f"Ground Floor Comfort %: {performance['avg_ground_comfort_pct']:.2f}%")
         print(f"Top Floor Comfort %: {performance['avg_top_comfort_pct']:.2f}%")
         print(f"Average Light Hours: {performance['avg_light_hours']:.2f}")
+        print(
+            f"Control Stability: {performance['control_stability']:.3f} ± {performance['control_stability_std']:.3f}"
+        )
 
     # Add raw episode data to performance dict
     performance["episode_data"] = {
@@ -286,7 +328,7 @@ def evaluate_agent(env, model, num_episodes=5, render=False, verbose=True):
 
 def visualize_performance(performance, output_dir, agent_name="RL Agent"):
     """
-    Create visualizations of agent performance with dynamic setpoint support.
+    Create visualizations of agent performance with control stability metric.
 
     Args:
         performance: Performance dictionary from evaluate_agent
@@ -393,13 +435,27 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
     plt.legend()
     plt.grid(True, alpha=0.3)
 
-    # Actions plot
+    # Actions plot with state change indicators
     plt.subplot(5, 1, 3 + subplot_offset)
     actions = np.array(episode_actions[0])
     action_names = ["Ground Light", "Ground Window", "Top Light", "Top Window"]
+
     for i, name in enumerate(action_names):
-        plt.plot(actions[:, i], label=name, linewidth=2)
-    plt.title(f"{agent_name} - Actions (Episode 1)")
+        action_series = actions[:, i]
+        plt.plot(action_series, label=name, linewidth=2)
+
+        # Mark state changes with red dots
+        changes = np.where(np.diff(action_series) != 0)[0]
+        if len(changes) > 0:
+            plt.scatter(
+                changes, action_series[changes], color="red", s=20, alpha=0.7, zorder=5
+            )
+
+    # Calculate and display control stability for this episode
+    episode_control_stability = calculate_control_stability(episode_actions[0])
+    plt.title(
+        f"{agent_name} - Actions (Episode 1) - Control Stability: {episode_control_stability:.3f}"
+    )
     plt.ylabel("Action State (0/1)")
     plt.ylim(-0.1, 1.1)
     plt.legend()
@@ -423,26 +479,28 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
         bbox_inches="tight",
     )
 
-    # Summary metrics plot
-    plt.figure(figsize=(12, 8))
+    # Summary metrics plot (now includes control stability)
+    plt.figure(figsize=(15, 8))
     metrics = [
         ("avg_total_reward", "Total Reward"),
         ("avg_ground_comfort_pct", "Ground Floor Comfort %"),
         ("avg_top_comfort_pct", "Top Floor Comfort %"),
         ("avg_light_hours", "Light Hours"),
+        ("control_stability", "Control Stability\n(State Changes/Timestep)"),
     ]
 
     for i, (metric, label) in enumerate(metrics):
-        plt.subplot(2, 2, i + 1)
-        plt.bar([agent_name], [performance.get(metric, 0)])
+        plt.subplot(1, 5, i + 1)
+        value = performance.get(metric, 0)
+        plt.bar([agent_name], [value])
         plt.title(label)
         plt.grid(True, alpha=0.3)
 
         # Add value label
         plt.text(
             0,
-            performance.get(metric, 0) + 0.1,
-            f"{performance.get(metric, 0):.2f}",
+            value + 0.01,
+            f"{value:.3f}" if metric == "control_stability" else f"{value:.2f}",
             ha="center",
             va="bottom",
         )
@@ -450,6 +508,103 @@ def visualize_performance(performance, output_dir, agent_name="RL Agent"):
     plt.tight_layout()
     plt.savefig(
         os.path.join(output_dir, f'{agent_name.lower().replace(" ", "_")}_summary.png'),
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    # Create control stability detailed analysis plot
+    plt.figure(figsize=(14, 10))
+
+    # Plot control stability per episode
+    plt.subplot(2, 2, 1)
+    episodes = range(1, len(performance["control_stability_scores"]) + 1)
+    plt.bar(episodes, performance["control_stability_scores"])
+    plt.title(f"{agent_name} - Control Stability per Episode")
+    plt.xlabel("Episode")
+    plt.ylabel("Control Stability (State Changes/Timestep)")
+    plt.grid(True, alpha=0.3)
+
+    # Add average line
+    avg_stability = performance["control_stability"]
+    plt.axhline(
+        y=avg_stability,
+        color="red",
+        linestyle="--",
+        label=f"Average: {avg_stability:.3f}",
+    )
+    plt.legend()
+
+    # Action switching breakdown for first episode
+    plt.subplot(2, 2, 2)
+    actions = np.array(episode_actions[0])
+    action_names = ["Ground Light", "Ground Window", "Top Light", "Top Window"]
+
+    switches_per_action = []
+    for i in range(actions.shape[1]):
+        action_series = actions[:, i]
+        switches = np.sum(np.diff(action_series) != 0)
+        switches_per_action.append(switches)
+
+    bars = plt.bar(action_names, switches_per_action)
+    plt.title(f"{agent_name} - State Changes by Action (Episode 1)")
+    plt.ylabel("Number of State Changes")
+    plt.xticks(rotation=45)
+    plt.grid(True, alpha=0.3)
+
+    # Add value labels
+    for bar, value in zip(bars, switches_per_action):
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.1,
+            str(value),
+            ha="center",
+            va="bottom",
+        )
+
+    # Control stability distribution across episodes
+    plt.subplot(2, 2, 3)
+    plt.hist(
+        performance["control_stability_scores"],
+        bins=min(10, len(performance["control_stability_scores"])),
+        edgecolor="black",
+        alpha=0.7,
+    )
+    plt.axvline(
+        x=avg_stability, color="red", linestyle="--", label=f"Mean: {avg_stability:.3f}"
+    )
+    plt.title(f"{agent_name} - Control Stability Distribution")
+    plt.xlabel("Control Stability")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    # Action usage summary
+    plt.subplot(2, 2, 4)
+    all_actions = np.concatenate(episode_actions)
+    duty_cycles = np.mean(all_actions, axis=0)
+
+    bars = plt.bar(action_names, duty_cycles)
+    plt.title(f"{agent_name} - Action Duty Cycles")
+    plt.ylabel("Fraction of Time Active")
+    plt.xticks(rotation=45)
+    plt.ylim(0, 1)
+    plt.grid(True, alpha=0.3)
+
+    # Add value labels
+    for bar, value in zip(bars, duty_cycles):
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.01,
+            f"{value:.2f}",
+            ha="center",
+            va="bottom",
+        )
+
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(
+            output_dir, f'{agent_name.lower().replace(" ", "_")}_control_analysis.png'
+        ),
         dpi=300,
         bbox_inches="tight",
     )
@@ -585,7 +740,7 @@ def main(
     verbose=True,
 ):
     """
-    Main function to evaluate a trained agent.
+    Main function to evaluate a trained agent with control stability metric.
 
     Args:
         model_path: Path to the trained model
@@ -664,45 +819,30 @@ def main(
             algorithm = alg.upper()
             break
 
-    # Save performance results
+    # Save performance results with proper JSON serialization
     results_path = os.path.join(output_dir, f"{algorithm}_deterministic_results.json")
-    # Convert numpy arrays to lists for JSON serialization
-    with open(results_path, "w") as f:
-        serializable_perf = {}
-        for key, value in performance.items():
-            if key == "episode_data":
-                serializable_perf[key] = {
-                    "temperatures": [
-                        [[float(t) for t in temp] for temp in episode]
-                        for episode in value["temperatures"]
-                    ],
-                    "external_temps": [
-                        [float(t) for t in temps] for temps in value["external_temps"]
-                    ],
-                    "actions": [
-                        [[int(a) for a in action] for action in episode]
-                        for episode in value["actions"]
-                    ],
-                    "rewards": [
-                        [float(r) for r in rewards] for rewards in value["rewards"]
-                    ],
-                    "total_rewards": [float(r) for r in value["total_rewards"]],
-                    "setpoints": (
-                        [
-                            [[float(sp) for sp in setpoint] for setpoint in episode]
-                            for episode in value.get("setpoints", [])
-                        ]
-                        if "setpoints" in value
-                        else []
-                    ),
-                }
-            elif isinstance(value, (np.integer, np.floating, np.ndarray)):
-                serializable_perf[key] = (
-                    value.item() if hasattr(value, "item") else value.tolist()
-                )
-            else:
-                serializable_perf[key] = value
 
+    def convert_to_serializable(obj):
+        """Recursively convert numpy types to Python native types for JSON serialization."""
+        if isinstance(obj, dict):
+            return {key: convert_to_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_to_serializable(item) for item in obj]
+        elif isinstance(obj, tuple):
+            return [convert_to_serializable(item) for item in obj]
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif hasattr(obj, "item"):
+            return obj.item()
+        else:
+            return obj
+
+    with open(results_path, "w") as f:
+        serializable_perf = convert_to_serializable(performance)
         json.dump(serializable_perf, f, indent=4)
 
     # Save environment results
@@ -715,13 +855,31 @@ def main(
     visualize_performance(performance, output_dir, agent_name=f"{algorithm} Agent")
 
     print(f"\nEvaluation completed. Results saved to {output_dir}")
+    print(f"\nControl Stability Summary:")
+    print(
+        f"  Average Control Stability: {performance['control_stability']:.3f} ± {performance['control_stability_std']:.3f}"
+    )
+    print(f"  Interpretation: Lower values indicate more stable control")
+
+    # Provide interpretation
+    control_stability = performance["control_stability"]
+    if control_stability < 0.1:
+        interpretation = "Excellent - Very stable control with minimal switching"
+    elif control_stability < 0.2:
+        interpretation = "Good - Reasonable control stability"
+    elif control_stability < 0.4:
+        interpretation = "Fair - Moderate switching frequency"
+    else:
+        interpretation = "Poor - High switching frequency, potentially inefficient"
+
+    print(f"  Assessment: {interpretation}")
 
     return performance
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Evaluate a trained RL agent on the dollhouse environment"
+        description="Evaluate a trained RL agent on the dollhouse environment with control stability metric"
     )
 
     # Required arguments

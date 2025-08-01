@@ -62,7 +62,37 @@ def create_rule_based_controller(hysteresis=0.5):
     return controller
 
 
-def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5, output_dir=None):
+def calculate_control_stability(episode_actions):
+    """
+    Calculate control stability metric as total state changes divided by episode length.
+
+    Args:
+        episode_actions: List of action arrays for the episode
+
+    Returns:
+        float: Control stability metric (state changes per timestep)
+    """
+    if len(episode_actions) <= 1:
+        return 0.0
+
+    actions = np.array(episode_actions)
+    total_state_changes = 0
+
+    # Count state changes for each action dimension
+    for action_dim in range(actions.shape[1]):
+        action_series = actions[:, action_dim]
+        state_changes = np.sum(np.diff(action_series) != 0)
+        total_state_changes += state_changes
+
+    # Normalize by episode length
+    control_stability = total_state_changes / len(episode_actions)
+
+    return control_stability
+
+
+def evaluate_rule_based(
+    env, num_episodes=5, render=True, hysteresis=0.5, output_dir=None
+):
     """
     Evaluate a simple rule-based controller on the environment.
 
@@ -74,7 +104,7 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5, output
         output_dir: Directory to save results (if None, uses default)
 
     Returns:
-        dict: Evaluation results
+        dict: Evaluation results including control stability
     """
     # Create the rule-based controller
     controller = create_rule_based_controller(hysteresis=hysteresis)
@@ -103,6 +133,7 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5, output
     episode_actions = []
     episode_rewards = []
     episode_setpoints = []
+    control_stability_scores = []
 
     for episode in range(num_episodes):
         # Reset returns (obs, info) tuple in gymnasium
@@ -170,6 +201,10 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5, output
             if render:
                 orig_env.render()
 
+        # Calculate control stability for this episode
+        episode_control_stability = calculate_control_stability(actions)
+        control_stability_scores.append(episode_control_stability)
+
         # Store episode data
         episode_temperatures.append(temps)
         episode_external_temps.append(ext_temps)
@@ -180,7 +215,8 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5, output
         avg_actions = {k: v / steps for k, v in actions_taken.items()}
 
         print(
-            f"Episode {episode+1}/{num_episodes}: Total Reward = {episode_reward:.2f}"
+            f"Episode {episode+1}/{num_episodes}: Total Reward = {episode_reward:.2f}, "
+            f"Control Stability = {episode_control_stability:.3f}"
         )
         print(f"  Steps: {steps}, Comfort Violations: {comfort_violations}")
         print(
@@ -196,11 +232,19 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5, output
     if hasattr(orig_env, "get_performance_summary"):
         performance = orig_env.get_performance_summary()
 
+        # Add control stability metrics
+        performance["control_stability"] = np.mean(control_stability_scores)
+        performance["control_stability_std"] = np.std(control_stability_scores)
+        performance["control_stability_scores"] = control_stability_scores
+
         print(f"\nSimple Rule-Based Controller Evaluation Summary:")
         print(f"Average Total Reward: {performance['avg_total_reward']:.2f}")
         print(f"Ground Floor Comfort %: {performance['avg_ground_comfort_pct']:.2f}%")
         print(f"Top Floor Comfort %: {performance['avg_top_comfort_pct']:.2f}%")
         print(f"Average Light Hours: {performance['avg_light_hours']:.2f}")
+        print(
+            f"Control Stability: {performance['control_stability']:.3f} ± {performance['control_stability_std']:.3f}"
+        )
 
         # Add episode data to performance dict
         performance["episode_data"] = {
@@ -233,9 +277,7 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5, output
         os.makedirs(save_dir, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filepath = os.path.join(
-            save_dir, f"simple_controller_results_{timestamp}.json"
-        )
+        filepath = os.path.join(save_dir, f"simple_controller_results_{timestamp}.json")
 
         orig_env.save_results(
             filepath,
@@ -247,46 +289,30 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5, output
         results_path = os.path.join(
             save_dir, f"simple_detailed_results_{timestamp}.json"
         )
-        with open(results_path, "w") as f:
-            # Convert numpy arrays to lists for JSON serialization
-            serializable_perf = {}
-            for key, value in performance.items():
-                if key == "episode_data":
-                    serializable_perf[key] = {
-                        "temperatures": [
-                            [[float(t) for t in temp] for temp in episode]
-                            for episode in value["temperatures"]
-                        ],
-                        "external_temps": [
-                            [float(t) for t in temps]
-                            for temps in value["external_temps"]
-                        ],
-                        "actions": [
-                            [[int(a) for a in action] for action in episode]
-                            for episode in value["actions"]
-                        ],
-                        "rewards": [
-                            [float(r) for r in rewards] for rewards in value["rewards"]
-                        ],
-                        "total_rewards": [float(r) for r in value["total_rewards"]],
-                        "setpoints": (
-                            [
-                                [[float(sp) for sp in setpoint] for setpoint in episode]
-                                for episode in value.get("setpoints", [])
-                            ]
-                            if "setpoints" in value
-                            else []
-                        ),
-                    }
-                elif isinstance(value, np.ndarray):
-                    serializable_perf[key] = value.tolist()
-                elif isinstance(value, (np.integer, np.floating)):
-                    serializable_perf[key] = (
-                        float(value) if isinstance(value, np.floating) else int(value)
-                    )
-                else:
-                    serializable_perf[key] = value
 
+        def convert_to_serializable(obj):
+            """Recursively convert numpy types to Python native types for JSON serialization."""
+            if isinstance(obj, dict):
+                return {
+                    key: convert_to_serializable(value) for key, value in obj.items()
+                }
+            elif isinstance(obj, list):
+                return [convert_to_serializable(item) for item in obj]
+            elif isinstance(obj, tuple):
+                return [convert_to_serializable(item) for item in obj]
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif hasattr(obj, "item"):
+                return obj.item()
+            else:
+                return obj
+
+        with open(results_path, "w") as f:
+            serializable_perf = convert_to_serializable(performance)
             json.dump(serializable_perf, f, indent=4)
         print(f"Detailed results saved to {results_path}")
 
@@ -297,9 +323,14 @@ def evaluate_rule_based(env, num_episodes=5, render=True, hysteresis=0.5, output
         performance = {
             "avg_total_reward": np.mean(total_rewards),
             "std_total_reward": np.std(total_rewards),
+            "control_stability": np.mean(control_stability_scores),
+            "control_stability_std": np.std(control_stability_scores),
         }
         print(
             f"\nAverage Total Reward: {performance['avg_total_reward']:.2f} ± {performance['std_total_reward']:.2f}"
+        )
+        print(
+            f"Control Stability: {performance['control_stability']:.3f} ± {performance['control_stability_std']:.3f}"
         )
 
     return performance
@@ -309,7 +340,7 @@ def visualize_performance(
     performance, output_dir, controller_name="Simple Rule-Based Controller"
 ):
     """
-    Create visualizations of controller performance with dynamic setpoint support.
+    Create visualizations of controller performance with control stability metric.
 
     Args:
         performance: Performance dictionary from evaluate_controller
@@ -414,13 +445,27 @@ def visualize_performance(
     plt.legend()
     plt.grid(True, alpha=0.3)
 
-    # Actions plot
+    # Actions plot with state change indicators
     plt.subplot(5, 1, 3 + subplot_offset)
     actions = np.array(episode_actions[0])
     action_names = ["Ground Light", "Ground Window", "Top Light", "Top Window"]
+
     for i, name in enumerate(action_names):
-        plt.plot(actions[:, i], label=name, linewidth=2)
-    plt.title(f"{controller_name} - Actions (Episode 1)")
+        action_series = actions[:, i]
+        plt.plot(action_series, label=name, linewidth=2)
+
+        # Mark state changes with red dots
+        changes = np.where(np.diff(action_series) != 0)[0]
+        if len(changes) > 0:
+            plt.scatter(
+                changes, action_series[changes], color="red", s=20, alpha=0.7, zorder=5
+            )
+
+    # Calculate and display control stability for this episode
+    episode_control_stability = calculate_control_stability(episode_actions[0])
+    plt.title(
+        f"{controller_name} - Actions (Episode 1) - Control Stability: {episode_control_stability:.3f}"
+    )
     plt.ylabel("Action State (0/1)")
     plt.ylim(-0.1, 1.1)
     plt.legend()
@@ -442,26 +487,28 @@ def visualize_performance(
         bbox_inches="tight",
     )
 
-    # Summary metrics plot
-    plt.figure(figsize=(12, 8))
+    # Summary metrics plot (now includes control stability)
+    plt.figure(figsize=(15, 8))
     metrics = [
         ("avg_total_reward", "Total Reward"),
         ("avg_ground_comfort_pct", "Ground Floor Comfort %"),
         ("avg_top_comfort_pct", "Top Floor Comfort %"),
         ("avg_light_hours", "Light Hours"),
+        ("control_stability", "Control Stability\n(State Changes/Timestep)"),
     ]
 
     for i, (metric, label) in enumerate(metrics):
-        plt.subplot(2, 2, i + 1)
-        plt.bar([controller_name], [performance.get(metric, 0)])
+        plt.subplot(1, 5, i + 1)
+        value = performance.get(metric, 0)
+        plt.bar([controller_name], [value])
         plt.title(label)
         plt.grid(True, alpha=0.3)
 
         # Add value label
         plt.text(
             0,
-            performance.get(metric, 0) + 0.1,
-            f"{performance.get(metric, 0):.2f}",
+            value + 0.01,
+            f"{value:.3f}" if metric == "control_stability" else f"{value:.2f}",
             ha="center",
             va="bottom",
         )
@@ -469,6 +516,101 @@ def visualize_performance(
     plt.tight_layout()
     plt.savefig(
         os.path.join(output_dir, f"simple_controller_summary.png"),
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    # Create control stability detailed analysis plot
+    plt.figure(figsize=(14, 10))
+
+    # Plot control stability per episode
+    plt.subplot(2, 2, 1)
+    episodes = range(1, len(performance["control_stability_scores"]) + 1)
+    plt.bar(episodes, performance["control_stability_scores"])
+    plt.title(f"{controller_name} - Control Stability per Episode")
+    plt.xlabel("Episode")
+    plt.ylabel("Control Stability (State Changes/Timestep)")
+    plt.grid(True, alpha=0.3)
+
+    # Add average line
+    avg_stability = performance["control_stability"]
+    plt.axhline(
+        y=avg_stability,
+        color="red",
+        linestyle="--",
+        label=f"Average: {avg_stability:.3f}",
+    )
+    plt.legend()
+
+    # Action switching breakdown for first episode
+    plt.subplot(2, 2, 2)
+    actions = np.array(episode_actions[0])
+    action_names = ["Ground Light", "Ground Window", "Top Light", "Top Window"]
+
+    switches_per_action = []
+    for i in range(actions.shape[1]):
+        action_series = actions[:, i]
+        switches = np.sum(np.diff(action_series) != 0)
+        switches_per_action.append(switches)
+
+    bars = plt.bar(action_names, switches_per_action)
+    plt.title(f"{controller_name} - State Changes by Action (Episode 1)")
+    plt.ylabel("Number of State Changes")
+    plt.xticks(rotation=45)
+    plt.grid(True, alpha=0.3)
+
+    # Add value labels
+    for bar, value in zip(bars, switches_per_action):
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.1,
+            str(value),
+            ha="center",
+            va="bottom",
+        )
+
+    # Control stability distribution across episodes
+    plt.subplot(2, 2, 3)
+    plt.hist(
+        performance["control_stability_scores"],
+        bins=min(10, len(performance["control_stability_scores"])),
+        edgecolor="black",
+        alpha=0.7,
+    )
+    plt.axvline(
+        x=avg_stability, color="red", linestyle="--", label=f"Mean: {avg_stability:.3f}"
+    )
+    plt.title(f"{controller_name} - Control Stability Distribution")
+    plt.xlabel("Control Stability")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    # Action usage summary
+    plt.subplot(2, 2, 4)
+    all_actions = np.concatenate(episode_actions)
+    duty_cycles = np.mean(all_actions, axis=0)
+
+    bars = plt.bar(action_names, duty_cycles)
+    plt.title(f"{controller_name} - Action Duty Cycles")
+    plt.ylabel("Fraction of Time Active")
+    plt.xticks(rotation=45)
+    plt.ylim(0, 1)
+    plt.grid(True, alpha=0.3)
+
+    # Add value labels
+    for bar, value in zip(bars, duty_cycles):
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.01,
+            f"{value:.2f}",
+            ha="center",
+            va="bottom",
+        )
+
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(output_dir, f"simple_controller_control_analysis.png"),
         dpi=300,
         bbox_inches="tight",
     )
@@ -648,6 +790,7 @@ def run_rule_based_evaluation(
         print(f"SINDy model training completed in {training_time:.2f} seconds")
 
         # Create environment with default parameters
+
         env_params = {
             "sindy_model": sindy_model,
             "use_reward_shaping": True,
@@ -685,14 +828,34 @@ def run_rule_based_evaluation(
     print(f"\nEvaluating Simple Rule-Based Controller...")
     start_time = time.time()
     performance = evaluate_rule_based(
-        env=env, 
-        num_episodes=num_episodes, 
-        render=render, 
+        env=env,
+        num_episodes=num_episodes,
+        render=render,
         hysteresis=hysteresis,
-        output_dir=output_dir  # Pass the output_dir to evaluation function
+        output_dir=output_dir,  # Pass the output_dir to evaluation function
     )
     evaluation_time = time.time() - start_time
     print(f"Evaluation completed in {evaluation_time:.2f} seconds")
+
+    # Print control stability interpretation
+    print(f"\nControl Stability Summary:")
+    print(
+        f"  Average Control Stability: {performance['control_stability']:.3f} ± {performance['control_stability_std']:.3f}"
+    )
+    print(f"  Interpretation: Lower values indicate more stable control")
+
+    # Provide interpretation
+    control_stability = performance["control_stability"]
+    if control_stability < 0.1:
+        interpretation = "Excellent - Very stable control with minimal switching"
+    elif control_stability < 0.2:
+        interpretation = "Good - Reasonable control stability"
+    elif control_stability < 0.4:
+        interpretation = "Fair - Moderate switching frequency"
+    else:
+        interpretation = "Poor - High switching frequency, potentially inefficient"
+
+    print(f"  Assessment: {interpretation}")
 
     return performance
 
@@ -700,7 +863,7 @@ def run_rule_based_evaluation(
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Train SINDy model and evaluate simple rule-based controller"
+        description="Train SINDy model and evaluate simple rule-based controller with control stability metric"
     )
 
     # Required arguments

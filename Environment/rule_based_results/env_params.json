@@ -1,0 +1,15 @@
+{
+    "episode_length": 5760,
+    "time_step_seconds": 30,
+    "heating_setpoint": 26.0,
+    "cooling_setpoint": 28.0,
+    "external_temp_pattern": "sine",
+    "setpoint_pattern": "schedule",
+    "reward_type": "balanced",
+    "energy_weight": 1.0,
+    "comfort_weight": 0.2,
+    "use_reward_shaping": true,
+    "random_start_time": false,
+    "shaping_weight": 0.3,
+    "sindy_model": "SINDy model object (not serializable)"
+}
