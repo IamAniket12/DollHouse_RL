@@ -4,7 +4,6 @@ pysindy/
 Sindy/Training/results/sindy_hyperopt_*/sindy_hyperopt_results.json
 wandb/
 monitor/
-requirements.txt
 Environment/results/ppo_20250625_124526/
 *.pyc
 .vscode/
