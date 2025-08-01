@@ -7,3 +7,14 @@ monitor/
 requirements.txt
 Environment/results/ppo_20250625_124526/
 *.pyc
+.vscode/
+__pycache__/
+Environment/eval_results/
+Environment/fuzzy_results/
+Environment/results/
+Environment/pid_results/
+
+Sindy/Training/results/
+Test/controller_comparison/
+Test/policy_plots/
+Test/episode_logs/
