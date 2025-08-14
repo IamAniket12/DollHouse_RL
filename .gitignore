@@ -12,6 +12,7 @@ Environment/eval_results/
 Environment/fuzzy_results/
 Environment/results/
 Environment/pid_results/
+Environment/rule_based_results/
 
 Sindy/Training/results/
 Test/controller_comparison/
