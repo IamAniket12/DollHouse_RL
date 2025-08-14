@@ -92,6 +92,85 @@ def check_gpu_availability():
     return device
 
 
+def parse_custom_observations(obs_string):
+    """
+    Parse custom observations from command line string.
+
+    Args:
+        obs_string: Comma-separated string of observation names
+
+    Returns:
+        List of observation names or None if empty/None
+    """
+    if not obs_string:
+        return None
+
+    # Split by comma and strip whitespace
+    obs_list = [obs.strip() for obs in obs_string.split(",") if obs.strip()]
+    return obs_list if obs_list else None
+
+
+def get_observation_presets():
+    """
+    Define common observation presets for easy use.
+
+    Returns:
+        Dictionary of preset names to observation lists
+    """
+    return {
+        "minimal": ["ground_temp", "top_temp", "heating_setpoint", "cooling_setpoint"],
+        "standard": [
+            "ground_temp",
+            "top_temp",
+            "external_temp",
+            "ground_light",
+            "ground_window",
+            "top_light",
+            "top_window",
+            "heating_setpoint",
+            "cooling_setpoint",
+            "hour_of_day",
+        ],
+        "extended": [
+            "ground_temp",
+            "top_temp",
+            "external_temp",
+            "ground_light",
+            "ground_window",
+            "top_light",
+            "top_window",
+            "heating_setpoint",
+            "cooling_setpoint",
+            "temp_difference",
+            "ground_temp_deviation",
+            "top_temp_deviation",
+            "total_lights_on",
+            "sin_hour",
+            "cos_hour",
+        ],
+        "compact": [
+            "ground_temp_deviation",
+            "top_temp_deviation",
+            "external_temp",
+            "total_lights_on",
+            "total_windows_open",
+            "comfort_zone_width",
+            "sin_hour",
+            "cos_hour",
+        ],
+        "time_aware": [
+            "ground_temp",
+            "top_temp",
+            "external_temp",
+            "heating_setpoint",
+            "cooling_setpoint",
+            "sin_hour",
+            "cos_hour",
+            "normalized_time",
+        ],
+    }
+
+
 def make_env(rank, seed, sindy_model, env_params, monitor_dir):
     """
     Create a function that returns a single environment instance.
@@ -433,6 +512,9 @@ def setup_training(
     n_envs=4,
     vec_env_type="subproc",
     normalize=True,
+    # NEW: Custom observation parameters
+    custom_observations=None,
+    observation_preset=None,
 ):
     """
     Set up and train an RL agent with WandB logging and GPU support.
@@ -452,6 +534,8 @@ def setup_training(
         n_envs: Number of parallel environments
         vec_env_type: Type of vectorized environment ("dummy" or "subproc")
         normalize: Whether to apply observation and reward normalization
+        custom_observations: List of custom observation names
+        observation_preset: Name of observation preset to use
 
     Returns:
         tuple: (model, model_path)
@@ -474,6 +558,22 @@ def setup_training(
     print(f"Training SINDy model on {data_file}...")
     sindy_model = train_sindy_model(file_path=data_file)
 
+    # Handle observation configuration
+    final_observations = None
+    if observation_preset:
+        presets = get_observation_presets()
+        if observation_preset not in presets:
+            raise ValueError(
+                f"Unknown preset: {observation_preset}. Available: {list(presets.keys())}"
+            )
+        final_observations = presets[observation_preset]
+        print(f"Using observation preset '{observation_preset}': {final_observations}")
+    elif custom_observations:
+        final_observations = custom_observations
+        print(f"Using custom observations: {final_observations}")
+    else:
+        print("Using default observations")
+
     # Create environment parameters
     env_params = {
         "episode_length": 2880,  # 24 hours
@@ -488,6 +588,8 @@ def setup_training(
         "use_reward_shaping": True,
         "random_start_time": True,
         "shaping_weight": 0.3,
+        # NEW: Add custom observation parameters
+        "custom_observations": final_observations,
     }
 
     # Create vectorized environment with optional normalization
@@ -502,6 +604,15 @@ def setup_training(
         normalize=normalize,
     )
 
+    # Log observation space information
+    temp_env = DollhouseThermalEnv(
+        sindy_model=sindy_model, custom_observations=final_observations
+    )
+    obs_info = temp_env.get_observation_info()
+    print(f"\nObservation space shape: {obs_info['observation_space_shape']}")
+    print(f"Observations used: {obs_info['observation_list']}")
+    temp_env.close()
+
     # Save environment parameters
     with open(os.path.join(output_dir, "env_params.json"), "w") as f:
         # Convert non-serializable parameters to strings
@@ -510,6 +621,7 @@ def setup_training(
         serializable_params["n_envs"] = n_envs
         serializable_params["vec_env_type"] = vec_env_type
         serializable_params["normalized"] = normalize
+        serializable_params["observation_info"] = obs_info
         json.dump(serializable_params, f, indent=4)
 
     # Train RL agent
@@ -550,6 +662,9 @@ def setup_training(
         "n_envs": n_envs,
         "vec_env_type": vec_env_type,
         "normalized": normalize,
+        "custom_observations": final_observations,
+        "observation_preset": observation_preset,
+        "observation_space_shape": obs_info["observation_space_shape"],
     }
 
     with open(os.path.join(output_dir, "training_config.json"), "w") as f:
@@ -561,7 +676,7 @@ def setup_training(
 if __name__ == "__main__":
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Train RL agent for dollhouse thermal control with WandB logging and GPU support"
+        description="Train RL agent for dollhouse thermal control with custom observations, WandB logging and GPU support"
     )
 
     # Required arguments
@@ -608,6 +723,26 @@ if __name__ == "__main__":
         help="Weight for comfort penalty in reward",
     )
 
+    # NEW: Custom observation parameters
+    parser.add_argument(
+        "--observations",
+        type=str,
+        default=None,
+        help="Comma-separated list of custom observations (e.g., 'ground_temp,top_temp,heating_setpoint')",
+    )
+    parser.add_argument(
+        "--obs-preset",
+        type=str,
+        default=None,
+        choices=["minimal", "standard", "extended", "compact", "time_aware"],
+        help="Use predefined observation preset",
+    )
+    parser.add_argument(
+        "--list-observations",
+        action="store_true",
+        help="List all available observations and presets, then exit",
+    )
+
     # Vectorized environment parameters
     parser.add_argument(
         "--n-envs", type=int, default=4, help="Number of parallel environments"
@@ -651,6 +786,33 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # Handle listing observations
+    if args.list_observations:
+        print("Available observation presets:")
+        presets = get_observation_presets()
+        for name, obs_list in presets.items():
+            print(f"  {name}: {obs_list}")
+
+        print("\nAll available individual observations:")
+        # Create temporary environment to get all available observations
+        from train_sindy_model import train_sindy_model
+
+        dummy_sindy = train_sindy_model(file_path=args.data)
+        temp_env = DollhouseThermalEnv(sindy_model=dummy_sindy)
+        available_obs = temp_env._get_available_observations()
+        for obs_name, obs_info in available_obs.items():
+            print(f"  {obs_name}: {obs_info['description']}")
+        temp_env.close()
+        exit(0)
+
+    # Parse custom observations
+    custom_observations = parse_custom_observations(args.observations)
+
+    # Validate that only one observation method is specified
+    if args.obs_preset and custom_observations:
+        print("Error: Cannot specify both --obs-preset and --observations. Choose one.")
+        exit(1)
+
     # Train RL agent
     model, model_path = setup_training(
         data_file=args.data,
@@ -666,7 +828,9 @@ if __name__ == "__main__":
         use_wandb=not args.no_wandb,
         n_envs=args.n_envs,
         vec_env_type=args.vec_env_type,
-        normalize=not args.no_normalize,  # Use normalization by default
+        normalize=not args.no_normalize,
+        custom_observations=custom_observations,
+        observation_preset=args.obs_preset,
     )
 
     print(f"\nTraining complete!")
@@ -678,9 +842,41 @@ if __name__ == "__main__":
         print(f"\nGPU used: {torch.cuda.get_device_name(0)}")
         print(f"Final GPU memory usage: {torch.cuda.memory_allocated(0) / 1e9:.2f} GB")
 
-# Example usage:
-# With normalization (recommended):
-# python train_rl_agent.py --data "../Data/dollhouse-data-2025-03-24.csv" --algorithm ppo --timesteps 10000000 --n-envs 4
 
-# Without normalization (for comparison):
-# python train_rl_agent.py --data "../Data/dollhouse-data-2025-03-24.csv" --algorithm ppo --timesteps 10000000 --n-envs 4 --no-normalize
+# =============================================================================
+# EXAMPLE USAGE
+# =============================================================================
+
+"""
+# List all available observations and presets:
+python train_rl_agent.py --data "data.csv" --list-observations
+
+# Default observations (backward compatible):
+python train_rl_agent.py --data "data.csv" --algorithm ppo --timesteps 1000000
+
+# Using observation presets:
+python train_rl_agent.py --data "data.csv" --algorithm ppo --obs-preset minimal
+python train_rl_agent.py --data "data.csv" --algorithm ppo --obs-preset extended
+python train_rl_agent.py --data "data.csv" --algorithm ppo --obs-preset compact
+
+# Custom observations:
+python train_rl_agent.py --data "data.csv" --algorithm ppo --observations "ground_temp,top_temp,heating_setpoint,cooling_setpoint"
+
+# Extended custom observations:
+python train_rl_agent.py --data "data.csv" --algorithm ppo --observations "ground_temp,top_temp,temp_difference,sin_hour,cos_hour,total_lights_on"
+
+# Compact efficient training:
+python train_rl_agent.py --data "data.csv" --algorithm ppo --obs-preset compact --n-envs 8
+
+# Time-aware training:
+python train_rl_agent.py --data "data.csv" --algorithm ppo --obs-preset time_aware --timesteps 5000000
+
+# High-performance training with custom observations:
+python train_rl_agent.py --data "data.csv" --algorithm ppo --observations "ground_temp_deviation,top_temp_deviation,external_temp,sin_hour,cos_hour" --n-envs 8 --timesteps 10000000
+
+# Training without normalization for comparison:
+python train_rl_agent.py --data "data.csv" --algorithm ppo --obs-preset standard --no-normalize
+
+# SAC with minimal observations:
+python train_rl_agent.py --data "data.csv" --algorithm sac --obs-preset minimal --timesteps 2000000
+"""

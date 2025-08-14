@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import pandas as pd
-from typing import Dict, Tuple, List, Optional, Union
+from typing import Dict, Tuple, List, Optional, Union, Callable
 import json
 import os
 
@@ -16,6 +16,7 @@ class DollhouseThermalEnv(gym.Env):
     Enhanced with:
     - Random start time feature for diverse training scenarios
     - Andrew Ng style reward shaping for accelerated learning
+    - Custom observation space configuration
 
     The environment simulates a two-floor dollhouse with:
     - Controllable lights (ON/OFF) on each floor
@@ -44,16 +45,18 @@ class DollhouseThermalEnv(gym.Env):
         random_seed: Optional[int] = None,
         setpoint_pattern: str = "fixed",
         render_mode: Optional[str] = None,
-        # NEW: Random start time parameters
+        # Random start time parameters
         random_start_time: bool = False,
         start_time_range: tuple = (0, 24),  # Hours range for random start
-        # NEW: Reward shaping parameters
+        # Reward shaping parameters
         use_reward_shaping: bool = False,
         shaping_gamma: float = 0.99,  # Discount factor for shaping
         shaping_weight: float = 0.3,  # Overall shaping influence
         comfort_potential_weight: float = 1.0,  # Weight for comfort potential
         energy_potential_weight: float = 0.5,  # Weight for energy potential
         comfort_decay_rate: float = 0.4,  # Exponential decay for temperature deviations
+        # NEW: Custom observation parameters
+        custom_observations: Optional[List[str]] = None,
     ):
         super().__init__()
 
@@ -93,16 +96,9 @@ class DollhouseThermalEnv(gym.Env):
         # [ground_light, ground_window, top_light, top_window]
         self.action_space = spaces.MultiDiscrete([2, 2, 2, 2])
 
-        # Observation space
-        # [ground_temp, top_temp, external_temp, ground_light, ground_window, top_light, top_window,
-        #  heating_setpoint, cooling_setpoint, hour_of_day, time_step]
-        self.observation_space = spaces.Box(
-            low=np.array([-10.0, -10.0, -30.0, 0, 0, 0, 0, 10.0, 10.0, 0.0, 0]),
-            high=np.array(
-                [50.0, 50.0, 50.0, 1, 1, 1, 1, 35.0, 35.0, 23.0, episode_length]
-            ),
-            dtype=np.float32,
-        )
+        # NEW: Custom observation setup
+        self.custom_observations = custom_observations
+        self._setup_observation_space()
 
         # For rendering
         self.fig = None
@@ -117,7 +113,7 @@ class DollhouseThermalEnv(gym.Env):
 
         # Will be initialized in reset()
         self.current_step = 0
-        self.episode_start_time_offset = 0  # NEW: For random start time
+        self.episode_start_time_offset = 0  # For random start time
         self.ground_temp = None
         self.top_temp = None
         self.external_temperatures = None
@@ -132,6 +128,259 @@ class DollhouseThermalEnv(gym.Env):
         # Reward shaping state variables
         self.previous_potential = 0.0
         self.shaping_history = []
+
+    def _get_available_observations(self) -> Dict[str, Dict]:
+        """
+        Define all available observations with their properties.
+
+        Returns:
+            Dictionary mapping observation names to their properties (low, high, description)
+        """
+        return {
+            "ground_temp": {
+                "low": -10.0,
+                "high": 50.0,
+                "description": "Ground floor temperature in Celsius",
+            },
+            "top_temp": {
+                "low": -10.0,
+                "high": 50.0,
+                "description": "Top floor temperature in Celsius",
+            },
+            "external_temp": {
+                "low": -30.0,
+                "high": 50.0,
+                "description": "External temperature in Celsius",
+            },
+            "ground_light": {
+                "low": 0,
+                "high": 1,
+                "description": "Ground floor light state (0=OFF, 1=ON)",
+            },
+            "ground_window": {
+                "low": 0,
+                "high": 1,
+                "description": "Ground floor window state (0=CLOSED, 1=OPEN)",
+            },
+            "top_light": {
+                "low": 0,
+                "high": 1,
+                "description": "Top floor light state (0=OFF, 1=ON)",
+            },
+            "top_window": {
+                "low": 0,
+                "high": 1,
+                "description": "Top floor window state (0=CLOSED, 1=OPEN)",
+            },
+            "heating_setpoint": {
+                "low": 10.0,
+                "high": 35.0,
+                "description": "Current heating setpoint in Celsius",
+            },
+            "cooling_setpoint": {
+                "low": 10.0,
+                "high": 35.0,
+                "description": "Current cooling setpoint in Celsius",
+            },
+            "hour_of_day": {
+                "low": 0.0,
+                "high": 23.0,
+                "description": "Current hour of day (0-23)",
+            },
+            "time_step": {
+                "low": 0,
+                "high": self.episode_length,
+                "description": "Current time step in episode",
+            },
+            # Derived observations
+            "temp_difference": {
+                "low": -40.0,
+                "high": 40.0,
+                "description": "Temperature difference between floors (top - ground)",
+            },
+            "ground_temp_deviation": {
+                "low": -25.0,
+                "high": 25.0,
+                "description": "Ground temp deviation from comfort zone center",
+            },
+            "top_temp_deviation": {
+                "low": -25.0,
+                "high": 25.0,
+                "description": "Top temp deviation from comfort zone center",
+            },
+            "comfort_zone_width": {
+                "low": 0.0,
+                "high": 25.0,
+                "description": "Width of current comfort zone",
+            },
+            "external_ground_diff": {
+                "low": -60.0,
+                "high": 60.0,
+                "description": "External temperature minus ground temperature",
+            },
+            "external_top_diff": {
+                "low": -60.0,
+                "high": 60.0,
+                "description": "External temperature minus top temperature",
+            },
+            "total_lights_on": {
+                "low": 0,
+                "high": 2,
+                "description": "Total number of lights currently on",
+            },
+            "total_windows_open": {
+                "low": 0,
+                "high": 2,
+                "description": "Total number of windows currently open",
+            },
+            "normalized_time": {
+                "low": 0.0,
+                "high": 1.0,
+                "description": "Normalized time step (0.0 to 1.0)",
+            },
+            "sin_hour": {
+                "low": -1.0,
+                "high": 1.0,
+                "description": "Sine of hour of day (for cyclic encoding)",
+            },
+            "cos_hour": {
+                "low": -1.0,
+                "high": 1.0,
+                "description": "Cosine of hour of day (for cyclic encoding)",
+            },
+        }
+
+    def _get_default_observations(self) -> List[str]:
+        """
+        Get the default observation list (maintains backward compatibility).
+        """
+        return [
+            "ground_temp",
+            "top_temp",
+            "external_temp",
+            "ground_light",
+            "ground_window",
+            "top_light",
+            "top_window",
+            "heating_setpoint",
+            "cooling_setpoint",
+            "hour_of_day",
+            "time_step",
+        ]
+
+    def _setup_observation_space(self):
+        """
+        Set up the observation space based on custom_observations or defaults.
+        """
+        available_obs = self._get_available_observations()
+
+        # Use custom observations if provided, otherwise use defaults
+        if self.custom_observations is None:
+            self.observation_list = self._get_default_observations()
+        else:
+            # Validate custom observations
+            invalid_obs = [
+                obs for obs in self.custom_observations if obs not in available_obs
+            ]
+            if invalid_obs:
+                raise ValueError(
+                    f"Invalid observations: {invalid_obs}. "
+                    f"Available observations: {list(available_obs.keys())}"
+                )
+            self.observation_list = self.custom_observations.copy()
+
+        # Create observation space
+        lows = []
+        highs = []
+
+        for obs_name in self.observation_list:
+            obs_info = available_obs[obs_name]
+            lows.append(obs_info["low"])
+            highs.append(obs_info["high"])
+
+        self.observation_space = spaces.Box(
+            low=np.array(lows, dtype=np.float32),
+            high=np.array(highs, dtype=np.float32),
+            dtype=np.float32,
+        )
+
+        # Store observation info for easy access
+        self.observation_info = {
+            obs: available_obs[obs] for obs in self.observation_list
+        }
+
+    def _calculate_derived_values(self, base_values: Dict) -> Dict:
+        """
+        Calculate derived observation values from base values.
+
+        Args:
+            base_values: Dictionary containing base observation values
+
+        Returns:
+            Dictionary with all observation values (base + derived)
+        """
+        values = base_values.copy()
+
+        # Temperature differences
+        values["temp_difference"] = values["top_temp"] - values["ground_temp"]
+        values["external_ground_diff"] = values["external_temp"] - values["ground_temp"]
+        values["external_top_diff"] = values["external_temp"] - values["top_temp"]
+
+        # Comfort zone calculations
+        comfort_center = (values["heating_setpoint"] + values["cooling_setpoint"]) / 2
+        values["ground_temp_deviation"] = values["ground_temp"] - comfort_center
+        values["top_temp_deviation"] = values["top_temp"] - comfort_center
+        values["comfort_zone_width"] = (
+            values["cooling_setpoint"] - values["heating_setpoint"]
+        )
+
+        # Aggregated values
+        values["total_lights_on"] = values["ground_light"] + values["top_light"]
+        values["total_windows_open"] = values["ground_window"] + values["top_window"]
+
+        # Normalized time
+        values["normalized_time"] = values["time_step"] / self.episode_length
+
+        # Cyclic time encoding
+        hour_rad = 2 * np.pi * values["hour_of_day"] / 24
+        values["sin_hour"] = np.sin(hour_rad)
+        values["cos_hour"] = np.cos(hour_rad)
+
+        return values
+
+    def _get_observation_vector(self, base_values: Dict) -> np.ndarray:
+        """
+        Create observation vector from base values.
+
+        Args:
+            base_values: Dictionary containing base observation values
+
+        Returns:
+            Numpy array with observations in the order specified by observation_list
+        """
+        # Calculate all possible observation values
+        all_values = self._calculate_derived_values(base_values)
+
+        # Extract values in the correct order
+        observation_vector = []
+        for obs_name in self.observation_list:
+            observation_vector.append(all_values[obs_name])
+
+        return np.array(observation_vector, dtype=np.float32)
+
+    def get_observation_info(self) -> Dict:
+        """
+        Get information about the current observation space.
+
+        Returns:
+            Dictionary with observation space information
+        """
+        return {
+            "observation_list": self.observation_list,
+            "observation_info": self.observation_info,
+            "observation_space_shape": self.observation_space.shape,
+            "available_observations": list(self._get_available_observations().keys()),
+        }
 
     def _generate_external_temperature(
         self, start_offset_hours: float = 0.0
@@ -527,7 +776,7 @@ class DollhouseThermalEnv(gym.Env):
         self.ground_temp = self.initial_ground_temp
         self.top_temp = self.initial_top_temp
 
-        # NEW: Generate random start time if enabled
+        # Generate random start time if enabled
         if self.random_start_time:
             start_hour_min, start_hour_max = self.start_time_range
             self.episode_start_time_offset = self._rng.uniform(
@@ -565,7 +814,7 @@ class DollhouseThermalEnv(gym.Env):
             self.external_temperatures[0],
         ]
 
-        # NEW: Initialize reward shaping state
+        # Initialize reward shaping state
         if self.use_reward_shaping:
             # Calculate initial potential for first state
             initial_action = np.zeros(4)
@@ -586,7 +835,7 @@ class DollhouseThermalEnv(gym.Env):
             "top_light": [0],
             "top_window": [0],
             "reward": [0],
-            "episode_start_time_offset": self.episode_start_time_offset,  # NEW: Track start time
+            "episode_start_time_offset": self.episode_start_time_offset,
         }
 
         # Calculate hour of day (considering offset)
@@ -595,25 +844,25 @@ class DollhouseThermalEnv(gym.Env):
             + (self.current_step * self.time_step_seconds / 3600)
         ) % 24
 
-        observation = np.array(
-            [
-                self.ground_temp,
-                self.top_temp,
-                self.external_temperatures[0],
-                0,  # ground_light
-                0,  # ground_window
-                0,  # top_light
-                0,  # top_window
-                self.heating_setpoint,
-                self.cooling_setpoint,
-                hour_of_day,
-                self.current_step,
-            ],
-            dtype=np.float32,
-        )
+        # NEW: Create observation using custom observation system
+        base_values = {
+            "ground_temp": self.ground_temp,
+            "top_temp": self.top_temp,
+            "external_temp": self.external_temperatures[0],
+            "ground_light": 0,
+            "ground_window": 0,
+            "top_light": 0,
+            "top_window": 0,
+            "heating_setpoint": self.heating_setpoint,
+            "cooling_setpoint": self.cooling_setpoint,
+            "hour_of_day": hour_of_day,
+            "time_step": self.current_step,
+        }
+
+        observation = self._get_observation_vector(base_values)
 
         info = {
-            "episode_start_time_offset": self.episode_start_time_offset,  # NEW: Include in info
+            "episode_start_time_offset": self.episode_start_time_offset,
         }
 
         return observation, info
@@ -680,25 +929,24 @@ class DollhouseThermalEnv(gym.Env):
             + (self.current_step * self.time_step_seconds / 3600)
         ) % 24
 
-        # Prepare observation
-        obs = np.array(
-            [
-                self.ground_temp,
-                self.top_temp,
-                self.external_temperatures[
-                    min(self.current_step, self.episode_length - 1)
-                ],
-                action[0],  # ground_light
-                action[1],  # ground_window
-                action[2],  # top_light
-                action[3],  # top_window
-                self.heating_setpoint,
-                self.cooling_setpoint,
-                hour_of_day,
-                self.current_step,
+        # NEW: Create observation using custom observation system
+        base_values = {
+            "ground_temp": self.ground_temp,
+            "top_temp": self.top_temp,
+            "external_temp": self.external_temperatures[
+                min(self.current_step, self.episode_length - 1)
             ],
-            dtype=np.float32,
-        )
+            "ground_light": action[0],
+            "ground_window": action[1],
+            "top_light": action[2],
+            "top_window": action[3],
+            "heating_setpoint": self.heating_setpoint,
+            "cooling_setpoint": self.cooling_setpoint,
+            "hour_of_day": hour_of_day,
+            "time_step": self.current_step,
+        }
+
+        obs = self._get_observation_vector(base_values)
 
         # Update history
         self.history["ground_temp"].append(self.ground_temp)
@@ -997,11 +1245,13 @@ class DollhouseThermalEnv(gym.Env):
                 "reward_type": self.reward_type,
                 "energy_weight": self.energy_weight,
                 "comfort_weight": self.comfort_weight,
-                "random_start_time": self.random_start_time,  # NEW
-                "use_reward_shaping": self.use_reward_shaping,  # NEW
+                "random_start_time": self.random_start_time,
+                "use_reward_shaping": self.use_reward_shaping,
                 "shaping_weight": (
                     self.shaping_weight if self.use_reward_shaping else None
-                ),  # NEW
+                ),
+                "custom_observations": self.custom_observations,  # NEW
+                "observation_list": self.observation_list,  # NEW
             },
             "episodes": [],
         }
@@ -1031,7 +1281,7 @@ class DollhouseThermalEnv(gym.Env):
                 "avg_reward": np.mean(episode["reward"]),
                 "episode_start_time_offset": episode.get(
                     "episode_start_time_offset", 0.0
-                ),  # NEW
+                ),
                 "comfort_metrics": {
                     "ground_floor_avg_cold_violation": np.mean(ground_cold_violations),
                     "ground_floor_avg_hot_violation": np.mean(ground_hot_violations),
@@ -1097,7 +1347,7 @@ class DollhouseThermalEnv(gym.Env):
                 ),
                 "avg_start_time_offset": np.mean(
                     [ep["episode_start_time_offset"] for ep in results["episodes"]]
-                ),  # NEW
+                ),
             }
 
         # Save results
@@ -1114,56 +1364,113 @@ class DollhouseThermalEnv(gym.Env):
 # =============================================================================
 
 """
-# Example 1: Original behavior (no new features)
+# Example 1: Default observations (backward compatible)
 env = DollhouseThermalEnv(
     sindy_model=your_model,
-    random_start_time=False,
-    use_reward_shaping=False,
-    # ... your other parameters
+    # No custom_observations specified - uses defaults
 )
 
-# Example 2: With random start time only
+# Example 2: Minimal custom observations
 env = DollhouseThermalEnv(
     sindy_model=your_model,
-    random_start_time=True,
-    start_time_range=(0, 24),  # Full 24-hour range
-    use_reward_shaping=False,
-    # ... your other parameters
+    custom_observations=[
+        "ground_temp", 
+        "top_temp", 
+        "external_temp",
+        "heating_setpoint",
+        "cooling_setpoint"
+    ]
 )
 
-# Example 3: With reward shaping only
+# Example 3: Extended observations with derived features
 env = DollhouseThermalEnv(
     sindy_model=your_model,
-    random_start_time=False,
-    use_reward_shaping=True,
-    shaping_weight=0.3,
-    comfort_potential_weight=1.0,
-    energy_potential_weight=0.5,
-    comfort_decay_rate=0.4,
-    # ... your other parameters
+    custom_observations=[
+        # Core temperatures
+        "ground_temp",
+        "top_temp", 
+        "external_temp",
+        
+        # Control states
+        "ground_light",
+        "ground_window",
+        "top_light", 
+        "top_window",
+        
+        # Setpoints
+        "heating_setpoint",
+        "cooling_setpoint",
+        
+        # Derived features
+        "temp_difference",              # top - ground
+        "ground_temp_deviation",        # deviation from comfort center
+        "top_temp_deviation",           # deviation from comfort center
+        "comfort_zone_width",           # cooling - heating setpoint
+        "external_ground_diff",         # external - ground
+        "total_lights_on",              # number of lights on
+        "total_windows_open",           # number of windows open
+        
+        # Time features
+        "sin_hour",                     # cyclic hour encoding
+        "cos_hour",                     # cyclic hour encoding
+        "normalized_time",              # 0.0 to 1.0 through episode
+    ]
 )
 
-# Example 4: With both features enabled
+# Example 4: Custom observations with transforms
+def normalize_temp(temp):
+    # Normalize temperature to [-1, 1] range around 20°C
+    return (temp - 20.0) / 30.0
+
+def square_temp_diff(diff):
+    # Square the temperature difference to emphasize large deviations
+    return diff ** 2
+
 env = DollhouseThermalEnv(
     sindy_model=your_model,
-    random_start_time=True,
-    start_time_range=(0, 24),
-    use_reward_shaping=True,
-    shaping_weight=0.3,
-    comfort_potential_weight=1.0,
-    energy_potential_weight=0.5,
-    comfort_decay_rate=0.4,
-    # ... your other parameters
+    custom_observations=[
+        "ground_temp",
+        "top_temp",
+        "temp_difference",
+        "heating_setpoint",
+        "cooling_setpoint"
+    ],
+    observation_transforms={
+        "ground_temp": normalize_temp,
+        "top_temp": normalize_temp,
+        "temp_difference": square_temp_diff
+    }
 )
 
-# Analyze shaping performance
-analysis = env.get_shaping_analysis()
-print(f"Shaping contributes {analysis['shaping_contribution_pct']:.1f}% of total reward")
+# Example 5: Get information about observations
+env = DollhouseThermalEnv(sindy_model=your_model)
+obs_info = env.get_observation_info()
+print("Observation space:", obs_info["observation_space_shape"])
+print("Current observations:", obs_info["observation_list"])
+print("Available observations:", obs_info["available_observations"])
 
-# Visualize shaping components
-env.plot_shaping_analysis()
+# Example 6: Compact observation space for simple controllers
+env = DollhouseThermalEnv(
+    sindy_model=your_model,
+    custom_observations=[
+        "ground_temp_deviation",  # How far from comfort center
+        "top_temp_deviation",     # How far from comfort center
+        "external_temp",          # For anticipatory control
+        "hour_of_day"            # For time-aware control
+    ]
+)
 
-# Check performance summary with start time stats
-summary = env.get_performance_summary()
-print(f"Average start time: {summary.get('avg_start_time', 'N/A'):.2f} hours")
+# Example 7: Time-focused observations
+env = DollhouseThermalEnv(
+    sindy_model=your_model,
+    custom_observations=[
+        "ground_temp",
+        "top_temp",
+        "sin_hour",              # Better than raw hour for periodicity
+        "cos_hour",              # Better than raw hour for periodicity
+        "normalized_time",       # Progress through episode
+        "heating_setpoint",
+        "cooling_setpoint"
+    ]
+)
 """
